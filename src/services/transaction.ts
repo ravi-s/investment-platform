@@ -1,8 +1,11 @@
+import db from "../db/database.js";
+import { HoldingRepository } from "../repositories/holding.js";
 import { PortfolioRepository } from "../repositories/portfolio.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { TransactionRepository } from "../repositories/transaction.js";
 
 const transactionRepository = new TransactionRepository();
+const holdingRepository = new HoldingRepository();
 const portfolioRepository = new PortfolioRepository();
 const securityRepository = new SecurityRepository();
 
@@ -33,14 +36,41 @@ export class TransactionService {
             throw new Error("Security not found");
         }
 
-        return transactionRepository.create(
-            portfolioId,
-            securityId,
-            type,
-            quantity,
-            price,
-            transactionDate
-        );
+        return db.transaction(() => {
+            const transaction = transactionRepository.create(
+                portfolioId,
+                securityId,
+                type,
+                quantity,
+                price,
+                transactionDate
+            );
+
+            const holding = holdingRepository.findByPortfolioAndSecurity(
+                portfolioId,
+                securityId
+            ); // as { id: number } | undefined;
+
+            if (type === "BUY") {
+                if (holding) {
+                    holdingRepository.updateQuantity(holding.id, quantity);
+                } else {
+                    holdingRepository.create(
+                        portfolioId,
+                        securityId,
+                        quantity
+                    );
+                }
+            } else {
+                if (!holding) {
+                    throw new Error("Holding not found");
+                }
+
+                holdingRepository.updateQuantity(holding.id, -quantity);
+            }
+
+            return transaction;
+        })();
     }
 
     findById(id: number) {
