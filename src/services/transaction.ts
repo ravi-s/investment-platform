@@ -120,7 +120,12 @@ export class TransactionService {
         return transactionRepository.findById(id);
     }
 
-    findByPortfolioId(portfolioId: number) {
-        return transactionRepository.findByPortfolioId(portfolioId);
+    findByPortfolioId(portfolioId: number, from?: string, to?: string) {
+        // Date-only strings compare correctly lexicographically (YYYY-MM-DD).
+        if (from !== undefined && to !== undefined && from > to) {
+            throw new Error("Invalid date range");
+        }
+
+        return transactionRepository.findByPortfolioId(portfolioId, from, to);
     }
 }

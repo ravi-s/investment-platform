@@ -13,6 +13,28 @@ const CreateTransactionSchema = z.object({
     transactionDate: z.string().min(1),
 });
 
+const DateOnlySchema = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
+    .refine(
+        (value) => {
+            const parts: number[] = value.split("-").map(Number);
+            const [year, month, day] = parts as [number, number, number];
+            const date = new Date(Date.UTC(year, month - 1, day));
+
+            return (
+                date.getUTCFullYear() === year &&
+                date.getUTCMonth() === month - 1 &&
+                date.getUTCDate() === day
+            );
+        },
+        "Invalid calendar date"
+    );
+
+const TransactionQuerySchema = z.object({
+    from: DateOnlySchema.optional(),
+    to: DateOnlySchema.optional(),
+});
 export async function transactionRoutes(app: FastifyInstance) {
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
@@ -91,12 +113,38 @@ export async function transactionRoutes(app: FastifyInstance) {
 
     app.get(
         "/api/portfolios/:portfolioId/transactions",
-        async (request) => {
+        async (request, reply) => {
             const { portfolioId } = request.params as {
                 portfolioId: string;
             };
 
-            return service.findByPortfolioId(Number(portfolioId));
+            const result = TransactionQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid query parameters",
+                    details: result.error,
+                });
+            }
+
+            try {
+                return service.findByPortfolioId(
+                    Number(portfolioId),
+                    result.data.from,
+                    result.data.to
+                );
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.message === "Invalid date range"
+                ) {
+                    return reply.code(400).send({
+                        error: "Invalid date range",
+                    });
+                }
+
+                throw error;
+            }
         }
     );
 }
