@@ -53,6 +53,23 @@ export async function transactionRoutes(app: FastifyInstance) {
                     error: "Security not found",
                 });
             }
+            if (
+                error instanceof Error &&
+                error.message === "Holding not found"
+            ) {
+                return reply.code(409).send({
+                    error: "Holding not found",
+                });
+            }
+
+            if (
+                error instanceof Error &&
+                error.message === "Insufficient holding"
+            ) {
+                return reply.code(409).send({
+                    error: "Insufficient holding",
+                });
+            }
 
             throw error;
         }
