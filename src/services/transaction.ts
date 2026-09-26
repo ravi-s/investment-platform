@@ -3,6 +3,7 @@ import { HoldingRepository } from "../repositories/holding.js";
 import { PortfolioRepository } from "../repositories/portfolio.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { TransactionRepository } from "../repositories/transaction.js";
+import { previousDate } from "../utils/date.js";
 
 const transactionRepository = new TransactionRepository();
 const holdingRepository = new HoldingRepository();
@@ -134,6 +135,8 @@ export class TransactionService {
         securityId: number,
         date: string
     ): number {
+        // Include all transactions through the requested date so the result
+        // represents the security's balance at the end of that day.
         const transactions = transactionRepository.findByPortfolioId(
             portfolioId,
             undefined,
@@ -142,6 +145,8 @@ export class TransactionService {
 
         let quantity = 0;
 
+        // Apply only transactions for the requested security. Reversing the
+        // repository result preserves chronological balance reconstruction.
         for (const transaction of [...transactions].reverse() as Array<{
             security_id: number;
             type: "BUY" | "SELL";
@@ -158,6 +163,39 @@ export class TransactionService {
             }
         }
 
+        // Return the net quantity held after all applicable transactions.
         return quantity;
+    }
+
+    getHoldingChange(
+        portfolioId: number,
+        securityId: number,
+        from: string,
+        to: string
+    ): number {
+        // A change can only be calculated across a valid, chronological range.
+        if (from > to) {
+            throw new Error("Invalid date range");
+        }
+
+        // Get the balance immediately before the range starts. Using the
+        // previous date keeps transactions on `from` inside the calculation.
+        const beforeStart = this.getHoldingAsOf(
+            portfolioId,
+            securityId,
+            previousDate(from)
+        );
+
+        // Get the balance at the end of the range, including transactions on
+        // the `to` date.
+        const atEnd = this.getHoldingAsOf(
+            portfolioId,
+            securityId,
+            to
+        );
+
+        // The difference between the ending and starting balances is the net
+        // holding change during the requested period.
+        return atEnd - beforeStart;
     }
 }

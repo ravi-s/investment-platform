@@ -184,4 +184,56 @@ export async function transactionRoutes(app: FastifyInstance) {
             };
         }
     );
+    app.get(
+        "/api/portfolios/:portfolioId/securities/:securityId/holding/change",
+        async (request, reply) => {
+            const { portfolioId, securityId } = request.params as {
+                portfolioId: string;
+                securityId: string;
+            };
+
+            const result = TransactionQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid query parameters",
+                    details: result.error,
+                });
+            }
+
+            if (!result.data.from || !result.data.to) {
+                return reply.code(400).send({
+                    error: "Both 'from' and 'to' query parameters are required",
+                });
+            }
+
+            try {
+                const quantityChange = service.getHoldingChange(
+                    Number(portfolioId),
+                    Number(securityId),
+                    result.data.from,
+                    result.data.to
+                );
+
+                return {
+                    portfolio_id: Number(portfolioId),
+                    security_id: Number(securityId),
+                    from: result.data.from,
+                    to: result.data.to,
+                    quantity_change: quantityChange,
+                };
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.message === "Invalid date range"
+                ) {
+                    return reply.code(400).send({
+                        error: "Invalid date range",
+                    });
+                }
+
+                throw error;
+            }
+        }
+    );
 }
