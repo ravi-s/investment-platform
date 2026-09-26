@@ -128,4 +128,36 @@ export class TransactionService {
 
         return transactionRepository.findByPortfolioId(portfolioId, from, to);
     }
+
+    getHoldingAsOf(
+        portfolioId: number,
+        securityId: number,
+        date: string
+    ): number {
+        const transactions = transactionRepository.findByPortfolioId(
+            portfolioId,
+            undefined,
+            date
+        );
+
+        let quantity = 0;
+
+        for (const transaction of [...transactions].reverse() as Array<{
+            security_id: number;
+            type: "BUY" | "SELL";
+            quantity: number;
+        }>) {
+            if (transaction.security_id !== securityId) {
+                continue;
+            }
+
+            if (transaction.type === "BUY") {
+                quantity += transaction.quantity;
+            } else {
+                quantity -= transaction.quantity;
+            }
+        }
+
+        return quantity;
+    }
 }

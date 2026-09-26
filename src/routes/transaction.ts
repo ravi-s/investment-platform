@@ -35,6 +35,11 @@ const TransactionQuerySchema = z.object({
     from: DateOnlySchema.optional(),
     to: DateOnlySchema.optional(),
 });
+
+const HoldingAsOfQuerySchema = z.object({
+    asOf: DateOnlySchema,
+});
+
 export async function transactionRoutes(app: FastifyInstance) {
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
@@ -145,6 +150,38 @@ export async function transactionRoutes(app: FastifyInstance) {
 
                 throw error;
             }
+        }
+    );
+
+    app.get(
+        "/api/portfolios/:portfolioId/securities/:securityId/holding",
+        async (request, reply) => {
+            const { portfolioId, securityId } = request.params as {
+                portfolioId: string;
+                securityId: string;
+            };
+
+            const result = HoldingAsOfQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid query parameters",
+                    details: result.error,
+                });
+            }
+
+            const quantity = service.getHoldingAsOf(
+                Number(portfolioId),
+                Number(securityId),
+                result.data.asOf
+            );
+
+            return {
+                portfolio_id: Number(portfolioId),
+                security_id: Number(securityId),
+                as_of: result.data.asOf,
+                quantity,
+            };
         }
     );
 }

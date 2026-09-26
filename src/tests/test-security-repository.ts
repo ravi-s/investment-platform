@@ -1,4 +1,4 @@
-import { SecurityRepository } from "./repositories/security.js";
+import { SecurityRepository } from "../repositories/security.ts";
 
 const repository = new SecurityRepository();
 
