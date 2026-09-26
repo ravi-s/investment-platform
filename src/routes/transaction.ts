@@ -40,6 +40,10 @@ const HoldingAsOfQuerySchema = z.object({
     asOf: DateOnlySchema,
 });
 
+const AsOfQuerySchema = z.object({
+    asOf: DateOnlySchema,
+});
+
 export async function transactionRoutes(app: FastifyInstance) {
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
@@ -234,6 +238,68 @@ export async function transactionRoutes(app: FastifyInstance) {
 
                 throw error;
             }
+        }
+    );
+
+    app.get(
+        "/api/portfolios/:portfolioId/securities/:securityId/transactions",
+        async (request, reply) => {
+            const { portfolioId, securityId } = request.params as {
+                portfolioId: string;
+                securityId: string;
+            };
+
+            const result = TransactionQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid query parameters",
+                    details: result.error,
+                });
+            }
+
+            try {
+                return service.findTransactionsForSecurity(
+                    Number(portfolioId),
+                    Number(securityId),
+                    result.data.from,
+                    result.data.to
+                );
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.message === "Invalid date range"
+                ) {
+                    return reply.code(400).send({
+                        error: "Invalid date range",
+                    });
+                }
+
+                throw error;
+            }
+        }
+    );
+
+    app.get(
+        "/api/portfolios/:portfolioId/securities",
+        async (request, reply) => {
+            const { portfolioId } = request.params as {
+                portfolioId: string;
+            };
+
+            const result = AsOfQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid query parameters",
+                    details: result.error,
+                });
+            }
+
+            return service.findSecuritiesHeldAsOf(
+                Number(portfolioId),
+                result.data.asOf
+            );
         }
     );
 }

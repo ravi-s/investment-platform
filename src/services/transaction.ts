@@ -198,4 +198,68 @@ export class TransactionService {
         // holding change during the requested period.
         return atEnd - beforeStart;
     }
+
+    /** Returns transactions for a portfolio and 
+     * security within an optional date range. 
+     * 
+     * */
+    findTransactionsForSecurity(
+        portfolioId: number,
+        securityId: number,
+        from?: string,
+        to?: string
+    ) {
+        const transactions = transactionRepository.findByPortfolioId(
+            portfolioId,
+            from,
+            to
+        );
+
+        return (transactions as Array<{ security_id: number }>).filter(
+            (transaction) => transaction.security_id === securityId
+        );
+    }
+
+    /**
+     * Returns each security with a positive holding in the portfolio as of the
+     * given date, along with its calculated quantity.
+     */
+    findSecuritiesHeldAsOf(
+        portfolioId: number,
+        date: string
+    ) {
+        const transactions = transactionRepository.findByPortfolioId(
+            portfolioId,
+            undefined,
+            date
+        ) as Array<{ security_id: number; type: string; quantity: number }>;
+
+        // Reconstruct holdings using transactions dated on or before the requested date.
+        const quantities = new Map<number, number>();
+
+        // Apply transactions in chronological order: buys increase holdings,
+        // while other transaction types decrease them.
+        for (const transaction of [...transactions].reverse()) {
+            const currentQuantity = quantities.get(transaction.security_id) ?? 0;
+
+            if (transaction.type === "BUY") {
+                quantities.set(
+                    transaction.security_id,
+                    currentQuantity + transaction.quantity
+                );
+            } else {
+                quantities.set(
+                    transaction.security_id,
+                    currentQuantity - transaction.quantity
+                );
+            }
+        }
+
+        return Array.from(quantities.entries())
+            .filter(([, quantity]) => quantity > 0)
+            .map(([security_id, quantity]) => ({
+                security_id,
+                quantity,
+            }));
+    }
 }
