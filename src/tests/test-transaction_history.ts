@@ -1,6 +1,6 @@
 // src/test-history.ts
 
-import { TransactionService } from "../services/transaction.js";
+import { TransactionService } from "../services/transaction.ts";
 
 const transactionService = new TransactionService();
 

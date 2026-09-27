@@ -9,6 +9,13 @@ const CreatePortfolioSchema = z.object({
     name: z.string().min(1),
 });
 
+const PortfolioHistoryQuerySchema = z.object({
+    date: z.string().regex(
+        /^\d{4}-\d{2}-\d{2}$/,
+        "Date must be in YYYY-MM-DD format"
+    ),
+});
+
 export async function portfolioRoutes(app: FastifyInstance) {
     app.post("/api/portfolios", async (request, reply) => {
         const result = CreatePortfolioSchema.safeParse(request.body);
@@ -70,15 +77,18 @@ export async function portfolioRoutes(app: FastifyInstance) {
     app.get(
         "/api/portfolios/:id/holdings/as-of",
         async (request, reply) => {
-            const { id } = request.params as { id: string };
-            const { date } = request.query as { date?: string };
 
-            if (!date) {
+            const { id } = request.params as { id: string };
+            const result = PortfolioHistoryQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
                 return reply.code(400).send({
-                    error: "Date is required"
+                    error: "Invalid date",
+                    details: result.error,
                 });
             }
 
+            const { date } = result.data;
             const portfolio = service.getPortfolio(Number(id));
 
             if (!portfolio) {

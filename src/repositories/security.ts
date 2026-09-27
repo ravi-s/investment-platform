@@ -20,6 +20,7 @@ export class SecurityRepository {
                 securities.id AS security_id,
                 securities.name AS security_name,
                 exchanges.code AS exchange_code,
+                listings.id AS listing_id,
                 listings.symbol AS symbol
             FROM listings
             JOIN securities
