@@ -1,6 +1,9 @@
 import { PortfolioRepository } from "../repositories/portfolio.js";
 import { UserRepository } from "../repositories/user.js";
 
+import { TransactionService } from "./transaction.js";
+
+const transactionService = new TransactionService();
 const portfolioRepository = new PortfolioRepository();
 const userRepository = new UserRepository();
 
@@ -21,5 +24,12 @@ export class PortfolioService {
 
     getHoldings(portfolioId: number) {
         return portfolioRepository.findHoldings(portfolioId);
+    }
+
+    getHoldingsAsOf(portfolioId: number, date: string) {
+        return transactionService.findSecuritiesHeldAsOf(
+            portfolioId,
+            date
+        );
     }
 }

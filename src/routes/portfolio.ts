@@ -66,4 +66,31 @@ export async function portfolioRoutes(app: FastifyInstance) {
             return service.getHoldings(Number(id));
         }
     );
+
+    app.get(
+        "/api/portfolios/:id/holdings/as-of",
+        async (request, reply) => {
+            const { id } = request.params as { id: string };
+            const { date } = request.query as { date?: string };
+
+            if (!date) {
+                return reply.code(400).send({
+                    error: "Date is required"
+                });
+            }
+
+            const portfolio = service.getPortfolio(Number(id));
+
+            if (!portfolio) {
+                return reply.code(404).send({
+                    error: "Portfolio not found"
+                });
+            }
+
+            return service.getHoldingsAsOf(
+                Number(id),
+                date
+            );
+        }
+    );
 }

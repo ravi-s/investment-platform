@@ -64,3 +64,10 @@ console.log(
         "2026-09-21"
     )
 );
+console.log(
+    "Securities held on 2026-09-22:",
+    transactionService.findSecuritiesHeldAsOf(
+        1,
+        "2026-09-22"
+    )
+);
