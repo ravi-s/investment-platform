@@ -15,6 +15,10 @@ const PortfolioHistoryQuerySchema = z.object({
         "Date must be in YYYY-MM-DD format"
     ),
 });
+const PortfolioValuationQuerySchema = z.object({
+    date: PortfolioHistoryQuerySchema.shape.date,
+    exchange: z.string().min(1),
+});
 
 export async function portfolioRoutes(app: FastifyInstance) {
     app.post("/api/portfolios", async (request, reply) => {
@@ -79,7 +83,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         async (request, reply) => {
 
             const { id } = request.params as { id: string };
-            const result = PortfolioHistoryQuerySchema.safeParse(request.query);
+            const result = PortfolioValuationQuerySchema.safeParse(request.query);
 
             if (!result.success) {
                 return reply.code(400).send({
@@ -101,6 +105,44 @@ export async function portfolioRoutes(app: FastifyInstance) {
                 Number(id),
                 date
             );
+        }
+    );
+    app.get(
+        "/api/portfolios/:id/valuation",
+        async (request, reply) => {
+            const { id } = request.params as { id: string };
+
+            const result =
+                PortfolioValuationQuerySchema.safeParse(request.query);
+
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid valuation parameters",
+                    details: result.error,
+                });
+            }
+
+            const portfolio = service.getPortfolio(Number(id));
+
+            if (!portfolio) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
+                });
+            }
+
+            try {
+                return service.getPortfolioValuation(
+                    Number(id),
+                    result.data.date,
+                    result.data.exchange
+                );
+            } catch (error) {
+                return reply.code(404).send({
+                    error: error instanceof Error
+                        ? error.message
+                        : "Unable to calculate portfolio valuation",
+                });
+            }
         }
     );
 }

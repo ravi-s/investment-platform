@@ -32,4 +32,27 @@ export class SecurityRepository {
         `)
             .get(exchangeCode, symbol);
     }
+
+    findListingBySecurityAndExchange(
+        securityId: number,
+        exchangeCode: string
+    ) {
+        return db
+            .prepare(`
+            SELECT
+                securities.id AS security_id,
+                securities.name AS security_name,
+                exchanges.code AS exchange_code,
+                listings.id AS listing_id,
+                listings.symbol AS symbol
+            FROM listings
+            JOIN securities
+                ON listings.security_id = securities.id
+            JOIN exchanges
+                ON listings.exchange_id = exchanges.id
+            WHERE listings.security_id = ?
+              AND exchanges.code = ?
+        `)
+            .get(securityId, exchangeCode);
+    }
 }

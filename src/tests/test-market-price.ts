@@ -35,3 +35,15 @@ service.create(
     "2026-09-24",
     0
 );
+
+/* import { SecurityRepository } from "../repositories/security.js";
+
+const securityRepository = new SecurityRepository();
+
+console.log(
+    "RELIANCE NSE listing:",
+    securityRepository.findListingBySecurityAndExchange(
+        1,
+        "NSE"
+    )
+); */
