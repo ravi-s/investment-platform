@@ -1,20 +1,33 @@
-import db from "../db/database.js";
+//import db from "../db/database.js";
+import type Database from "better-sqlite3";
 
+type SecurityRow = {
+    id: number;
+    name: string;
+};
 
+type SecurityListingRow = {
+    security_id: number;
+    security_name: string;
+    exchange_code: string;
+    listing_id: number;
+    symbol: string;
+};
 export class SecurityRepository {
+    constructor(private readonly db: Database.Database) { }
 
     findById(id: number) {
-        return db
+        return this.db
             .prepare(`
                 SELECT id, name
                 FROM securities
                 WHERE id = ?
             `)
-            .get(id);
+            .get(id) as SecurityRow | undefined;
     }
 
     findListing(exchangeCode: string, symbol: string) {
-        return db
+        return this.db
             .prepare(`
             SELECT
                 securities.id AS security_id,
@@ -30,14 +43,14 @@ export class SecurityRepository {
             WHERE exchanges.code = ?
               AND listings.symbol = ?
         `)
-            .get(exchangeCode, symbol);
+            .get(exchangeCode, symbol) as SecurityListingRow | undefined;
     }
 
     findListingBySecurityAndExchange(
         securityId: number,
         exchangeCode: string
     ) {
-        return db
+        return this.db
             .prepare(`
             SELECT
                 securities.id AS security_id,
@@ -53,6 +66,6 @@ export class SecurityRepository {
             WHERE listings.security_id = ?
               AND exchanges.code = ?
         `)
-            .get(securityId, exchangeCode);
+            .get(securityId, exchangeCode) as SecurityListingRow | undefined;
     }
 }

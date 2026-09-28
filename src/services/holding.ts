@@ -1,10 +1,11 @@
 import { PortfolioRepository } from "../repositories/portfolio.js";
 import { HoldingRepository } from "../repositories/holding.js";
 import { SecurityRepository } from "../repositories/security.js";
+import db from "../db/database.js";
 
 const holdingRepository = new HoldingRepository();
 const portfolioRepository = new PortfolioRepository();
-const securityRepository = new SecurityRepository();
+const securityRepository = new SecurityRepository(db);
 
 export class HoldingService {
 

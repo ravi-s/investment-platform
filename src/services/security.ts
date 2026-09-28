@@ -1,6 +1,6 @@
 import { SecurityRepository } from "../repositories/security.js";
-
-const repository = new SecurityRepository();
+import db from "../db/database.js";
+const repository = new SecurityRepository(db);
 
 export class SecurityService {
     getSecurity(id: number) {

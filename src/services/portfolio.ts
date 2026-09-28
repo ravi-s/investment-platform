@@ -5,11 +5,12 @@ import { UserRepository } from "../repositories/user.js";
 import { TransactionService } from "./transaction.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { MarketPriceRepository } from "../repositories/market-price.js";
+import db from "../db/database.js";
 
 const transactionService = new TransactionService();
 const portfolioRepository = new PortfolioRepository();
 const userRepository = new UserRepository();
-const securityRepository = new SecurityRepository();
+const securityRepository = new SecurityRepository(db);
 const marketPriceRepository = new MarketPriceRepository();
 
 

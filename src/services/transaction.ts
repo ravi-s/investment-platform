@@ -8,7 +8,7 @@ import { previousDate } from "../utils/date.js";
 const transactionRepository = new TransactionRepository();
 const holdingRepository = new HoldingRepository();
 const portfolioRepository = new PortfolioRepository();
-const securityRepository = new SecurityRepository();
+const securityRepository = new SecurityRepository(db);
 
 export class TransactionService {
     /**

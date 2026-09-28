@@ -1,8 +1,8 @@
 import { SecurityRepository } from "../repositories/security.js";
 import { MarketPriceRepository } from "../repositories/market-price.js";
-
+import db from "../db/database.js";
 const marketPriceRepository = new MarketPriceRepository();
-const securityRepository = new SecurityRepository();
+const securityRepository = new SecurityRepository(db);
 
 export class MarketPriceService {
     create(
