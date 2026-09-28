@@ -71,3 +71,10 @@ console.log(
         "2026-09-22"
     )
 );
+console.log(
+    "Portfolio composition on 2026-09-23:",
+    transactionService.getPortfolioCompositionAsOf(
+        1,
+        "2026-09-23"
+    )
+);

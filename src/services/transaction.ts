@@ -262,4 +262,62 @@ export class TransactionService {
                 quantity,
             }));
     }
+
+    /**
+     * Reconstructs the portfolio's holdings as of the specified date.
+     * Transactions are returned newest-first, so they are replayed in
+     * chronological order; BUY transactions add quantity and acquisition
+     * cost, while SELL transactions reduce the held quantity. Positions with
+     * no remaining shares are omitted from the returned composition.
+     */
+    getPortfolioCompositionAsOf(
+        portfolioId: number,
+        date: string
+    ) {
+        const transactions = transactionRepository.findByPortfolioId(
+            portfolioId,
+            undefined,
+            date
+        ) as Array<{
+            security_id: number;
+            type: "BUY" | "SELL";
+            quantity: number;
+            price: number;
+        }>;
+
+        const composition = new Map<
+            number,
+            {
+                quantity: number;
+                acquisition_amount: number;
+            }
+        >();
+
+        // Transactions are returned newest-first, so reconstruct
+        // the historical state chronologically.
+        for (const transaction of [...transactions].reverse()) {
+            const current = composition.get(transaction.security_id) ?? {
+                quantity: 0,
+                acquisition_amount: 0,
+            };
+
+            if (transaction.type === "BUY") {
+                current.quantity += transaction.quantity;
+                current.acquisition_amount +=
+                    transaction.quantity * transaction.price;
+            } else {
+                current.quantity -= transaction.quantity;
+            }
+
+            composition.set(transaction.security_id, current);
+        }
+
+        return Array.from(composition.entries())
+            .filter(([, position]) => position.quantity > 0)
+            .map(([security_id, position]) => ({
+                security_id,
+                quantity: position.quantity,
+                acquisition_amount: position.acquisition_amount,
+            }));
+    }
 }
