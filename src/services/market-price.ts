@@ -1,10 +1,16 @@
 import { SecurityRepository } from "../repositories/security.js";
 import { MarketPriceRepository } from "../repositories/market-price.js";
-import db from "../db/database.js";
-const marketPriceRepository = new MarketPriceRepository();
-const securityRepository = new SecurityRepository(db);
+import type Database from "better-sqlite3";
+
 
 export class MarketPriceService {
+    private marketPriceRepository: MarketPriceRepository;
+    private securityRepository: SecurityRepository;
+
+    constructor(db: Database.Database) {
+        this.marketPriceRepository = new MarketPriceRepository(db);
+        this.securityRepository = new SecurityRepository(db);
+    }
     create(
         exchangeCode: string,
         symbol: string,
@@ -15,7 +21,7 @@ export class MarketPriceService {
             throw new Error("Close price must be greater than 0");
         }
 
-        const listing = securityRepository.findListing(
+        const listing = this.securityRepository.findListing(
             exchangeCode,
             symbol
         ) as { listing_id: number } | undefined;
@@ -24,7 +30,7 @@ export class MarketPriceService {
             throw new Error("Listing not found");
         }
 
-        return marketPriceRepository.create(
+        return this.marketPriceRepository.create(
             listing.listing_id,
             priceDate,
             closePrice
@@ -36,7 +42,7 @@ export class MarketPriceService {
         symbol: string,
         priceDate: string
     ) {
-        const listing = securityRepository.findListing(
+        const listing = this.securityRepository.findListing(
             exchangeCode,
             symbol
         ) as { listing_id: number } | undefined;
@@ -45,7 +51,7 @@ export class MarketPriceService {
             throw new Error("Listing not found");
         }
 
-        return marketPriceRepository.findByListingAndDate(
+        return this.marketPriceRepository.findByListingAndDate(
             listing.listing_id,
             priceDate
         );

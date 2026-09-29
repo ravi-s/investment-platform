@@ -1,4 +1,7 @@
-INSERT INTO transactions (
+
+-- Test fixture data is created by the test suite.
+
+/* INSERT INTO transactions (
     portfolio_id,
     security_id,
     type,
@@ -13,4 +16,4 @@ VALUES (
     90,
     2488,
     '2026-09-22'
-);
+); */

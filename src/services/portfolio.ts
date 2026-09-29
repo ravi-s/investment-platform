@@ -11,7 +11,7 @@ const transactionService = new TransactionService();
 const portfolioRepository = new PortfolioRepository();
 const userRepository = new UserRepository();
 const securityRepository = new SecurityRepository(db);
-const marketPriceRepository = new MarketPriceRepository();
+const marketPriceRepository = new MarketPriceRepository(db);
 
 
 

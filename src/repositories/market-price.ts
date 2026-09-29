@@ -1,4 +1,5 @@
-import db from "../db/database.js";
+import type Database from "better-sqlite3";
+// import db from "../db/database.js";
 
 /**
  * Repository for managing market price records.
@@ -11,12 +12,13 @@ type MarketPriceRow = {
     close_price: number;
 };
 export class MarketPriceRepository {
+    constructor(private db: Database.Database) { }
     create(
         listingId: number,
         priceDate: string,
         closePrice: number
     ): MarketPriceRow {
-        const result = db.prepare(`
+        const result = this.db.prepare(`
             INSERT INTO market_prices (
                 listing_id,
                 price_date,
@@ -41,7 +43,7 @@ export class MarketPriceRepository {
         listingId: number,
         priceDate: string
     ): MarketPriceRow | undefined {
-        return db.prepare(`
+        return this.db.prepare(`
             SELECT *
             FROM market_prices
             WHERE listing_id = ?

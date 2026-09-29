@@ -18,3 +18,9 @@ CREATE TABLE listings (
 
     UNIQUE (security_id, exchange_id)
 );
+
+
+INSERT INTO exchanges (id, code, name)
+VALUES
+    (1, 'NSE', 'National Stock Exchange of India'),
+    (2, 'BSE', 'BSE Limited');

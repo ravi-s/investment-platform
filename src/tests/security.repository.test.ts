@@ -13,6 +13,43 @@ describe("SecurityRepository", () => {
 
         runMigrations(testDb);
 
+        const security = testDb
+            .prepare(`
+            INSERT INTO securities (name)
+            VALUES (?)
+        `)
+            .run("Reliance Industries Limited");
+
+        testDb
+            .prepare(`
+            INSERT INTO listings (
+                security_id,
+                exchange_id,
+                symbol
+            )
+            VALUES (?, ?, ?)
+        `)
+            .run(
+                security.lastInsertRowid,
+                1,
+                "RELIANCE"
+            );
+
+        testDb
+            .prepare(`
+            INSERT INTO listings (
+                security_id,
+                exchange_id,
+                symbol
+            )
+            VALUES (?, ?, ?)
+        `)
+            .run(
+                security.lastInsertRowid,
+                2,
+                "500325"
+            );
+
         repository = new SecurityRepository(testDb);
     });
 
