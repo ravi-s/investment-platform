@@ -1,8 +1,9 @@
-import db from "../db/database.js";
+import type { Database } from "better-sqlite3";
 
 export class PortfolioRepository {
+    constructor(private readonly db: Database) { }
     create(userId: number, name: string) {
-        const result = db
+        const result = this.db
             .prepare(`
                 INSERT INTO portfolios (user_id, name)
                 VALUES (?, ?)
@@ -13,7 +14,7 @@ export class PortfolioRepository {
     }
 
     findById(id: number) {
-        return db
+        return this.db
             .prepare(`
                 SELECT id, user_id, name
                 FROM portfolios
@@ -23,7 +24,7 @@ export class PortfolioRepository {
     }
 
     findHoldings(portfolioId: number) {
-        return db
+        return this.db
             .prepare(`
                 SELECT
                     holdings.id AS holding_id,

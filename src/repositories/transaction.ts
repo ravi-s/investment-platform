@@ -1,9 +1,10 @@
-import db from "../db/database.ts";
+import type Database from "better-sqlite3";
 
 export class TransactionRepository {
     // Returns the persisted database representation for one transaction.
+    constructor(private readonly db: Database.Database) { }
     findById(id: number) {
-        return db
+        return this.db
             .prepare(`
 				SELECT
 					id,
@@ -34,7 +35,7 @@ export class TransactionRepository {
             params.push(to);
         }
 
-        return db
+        return this.db
             .prepare(`
 				SELECT
 					id,
@@ -59,7 +60,7 @@ export class TransactionRepository {
         price: number,
         transactionDate: string
     ) {
-        const result = db
+        const result = this.db
             .prepare(`
 				INSERT INTO transactions (
 					portfolio_id,

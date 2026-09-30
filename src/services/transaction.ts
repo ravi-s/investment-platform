@@ -1,3 +1,4 @@
+import type Database from "better-sqlite3";
 import db from "../db/database.js";
 import { HoldingRepository } from "../repositories/holding.js";
 import { PortfolioRepository } from "../repositories/portfolio.js";
@@ -5,12 +6,20 @@ import { SecurityRepository } from "../repositories/security.js";
 import { TransactionRepository } from "../repositories/transaction.js";
 import { previousDate } from "../utils/date.js";
 
-const transactionRepository = new TransactionRepository();
-const holdingRepository = new HoldingRepository();
-const portfolioRepository = new PortfolioRepository();
-const securityRepository = new SecurityRepository(db);
+
 
 export class TransactionService {
+    private readonly transactionRepository: TransactionRepository;
+    private readonly holdingRepository: HoldingRepository;
+    private readonly portfolioRepository: PortfolioRepository;
+    private readonly securityRepository: SecurityRepository;
+
+    constructor(private readonly db: Database.Database) {
+        this.transactionRepository = new TransactionRepository(db);
+        this.holdingRepository = new HoldingRepository(db);
+        this.portfolioRepository = new PortfolioRepository(db);
+        this.securityRepository = new SecurityRepository(db);
+    }
     /**
      * Creates a transaction and updates the corresponding holding atomically.
      *
@@ -52,20 +61,20 @@ export class TransactionService {
         // Verify referenced entities before starting the write transaction so
         // callers receive domain-specific errors instead of repository or
         // foreign-key errors.
-        const portfolio = portfolioRepository.findById(portfolioId);
+        const portfolio = this.portfolioRepository.findById(portfolioId);
         if (!portfolio) {
             throw new Error("Portfolio not found");
         }
 
-        const security = securityRepository.findById(securityId);
+        const security = this.securityRepository.findById(securityId);
         if (!security) {
             throw new Error("Security not found");
         }
 
-        return db.transaction(() => {
+        return this.db.transaction(() => {
             // The transaction record is created before the holding is changed
             // so both records are committed or rolled back together.
-            const transaction = transactionRepository.create(
+            const transaction = this.transactionRepository.create(
                 portfolioId,
                 securityId,
                 type,
@@ -77,7 +86,7 @@ export class TransactionService {
             // Read the position inside the database transaction. This keeps
             // the decision to create or update a holding in the same atomic
             // unit as the write operations below.
-            const holding = holdingRepository.findByPortfolioAndSecurity(
+            const holding = this.holdingRepository.findByPortfolioAndSecurity(
                 portfolioId,
                 securityId
             );
@@ -86,11 +95,11 @@ export class TransactionService {
                 if (holding) {
                     // Repository quantities are adjusted by a delta rather
                     // than replacing the stored balance.
-                    holdingRepository.updateQuantity(holding.id, quantity);
+                    this.holdingRepository.updateQuantity(holding.id, quantity);
                 } else {
                     // The first purchase establishes the portfolio/security
                     // position and its initial quantity.
-                    holdingRepository.create(
+                    this.holdingRepository.create(
                         portfolioId,
                         securityId,
                         quantity
@@ -110,7 +119,7 @@ export class TransactionService {
 
                 // Pass a negative delta for SELL so the repository decreases
                 // the existing quantity by the amount sold.
-                holdingRepository.updateQuantity(holding.id, -quantity);
+                this.holdingRepository.updateQuantity(holding.id, -quantity);
             }
 
             return transaction;
@@ -118,7 +127,7 @@ export class TransactionService {
     }
 
     findById(id: number) {
-        return transactionRepository.findById(id);
+        return this.transactionRepository.findById(id);
     }
 
     findByPortfolioId(portfolioId: number, from?: string, to?: string) {
@@ -127,7 +136,7 @@ export class TransactionService {
             throw new Error("Invalid date range");
         }
 
-        return transactionRepository.findByPortfolioId(portfolioId, from, to);
+        return this.transactionRepository.findByPortfolioId(portfolioId, from, to);
     }
 
     getHoldingAsOf(
@@ -137,7 +146,7 @@ export class TransactionService {
     ): number {
         // Include all transactions through the requested date so the result
         // represents the security's balance at the end of that day.
-        const transactions = transactionRepository.findByPortfolioId(
+        const transactions = this.transactionRepository.findByPortfolioId(
             portfolioId,
             undefined,
             date
@@ -209,7 +218,7 @@ export class TransactionService {
         from?: string,
         to?: string
     ) {
-        const transactions = transactionRepository.findByPortfolioId(
+        const transactions = this.transactionRepository.findByPortfolioId(
             portfolioId,
             from,
             to
@@ -228,7 +237,7 @@ export class TransactionService {
         portfolioId: number,
         date: string
     ) {
-        const transactions = transactionRepository.findByPortfolioId(
+        const transactions = this.transactionRepository.findByPortfolioId(
             portfolioId,
             undefined,
             date
@@ -274,7 +283,7 @@ export class TransactionService {
         portfolioId: number,
         date: string
     ) {
-        const transactions = transactionRepository.findByPortfolioId(
+        const transactions = this.transactionRepository.findByPortfolioId(
             portfolioId,
             undefined,
             date

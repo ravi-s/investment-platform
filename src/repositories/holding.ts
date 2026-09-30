@@ -1,4 +1,4 @@
-import db from "../db/database.ts";
+import type { Database } from "better-sqlite3";
 
 
 type Holding = {
@@ -8,8 +8,10 @@ type Holding = {
     quantity: number;
 };
 export class HoldingRepository {
+    constructor(private readonly db: Database) { }
+
     findById(id: number) {
-        return db
+        return this.db
             .prepare(`
         SELECT
           id,
@@ -23,7 +25,7 @@ export class HoldingRepository {
     }
 
     findByPortfolioId(portfolioId: number) {
-        return db
+        return this.db
             .prepare(`
         SELECT
           id,
@@ -44,7 +46,7 @@ export class HoldingRepository {
         securityId: number
     ): Holding | undefined {
 
-        return db
+        return this.db
             .prepare(`
           SELECT
             id,
@@ -63,7 +65,7 @@ export class HoldingRepository {
         securityId: number,
         quantity: number
     ) {
-        const result = db
+        const result = this.db
             .prepare(`
         INSERT INTO holdings (
           portfolio_id,
@@ -78,7 +80,7 @@ export class HoldingRepository {
     }
 
     updateQuantity(id: number, delta: number) {
-        db.prepare(`
+        this.db.prepare(`
     UPDATE holdings
     SET quantity = quantity + ?
     WHERE id = ?

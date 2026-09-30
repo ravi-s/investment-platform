@@ -5,37 +5,41 @@ import { UserRepository } from "../repositories/user.js";
 import { TransactionService } from "./transaction.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { MarketPriceRepository } from "../repositories/market-price.js";
-import db from "../db/database.js";
+import type Database from "better-sqlite3"; export class PortfolioService {
+    private readonly transactionService: TransactionService;
+    private readonly portfolioRepository: PortfolioRepository;
+    private readonly userRepository: UserRepository;
+    private readonly securityRepository: SecurityRepository;
+    private readonly marketPriceRepository: MarketPriceRepository;
 
-const transactionService = new TransactionService();
-const portfolioRepository = new PortfolioRepository();
-const userRepository = new UserRepository();
-const securityRepository = new SecurityRepository(db);
-const marketPriceRepository = new MarketPriceRepository(db);
+    constructor(db: Database.Database) {
+        this.transactionService = new TransactionService(db);
+        this.portfolioRepository = new PortfolioRepository(db);
+        this.userRepository = new UserRepository();
+        this.securityRepository = new SecurityRepository(db);
+        this.marketPriceRepository = new MarketPriceRepository(db);
+    }
 
-
-
-export class PortfolioService {
     createPortfolio(userId: number, name: string) {
-        const user = userRepository.findById(userId);
+        const user = this.userRepository.findById(userId);
 
         if (!user) {
             return null;
         }
 
-        return portfolioRepository.create(userId, name);
+        return this.portfolioRepository.create(userId, name);
     }
 
     getPortfolio(id: number) {
-        return portfolioRepository.findById(id);
+        return this.portfolioRepository.findById(id);
     }
 
     getHoldings(portfolioId: number) {
-        return portfolioRepository.findHoldings(portfolioId);
+        return this.portfolioRepository.findHoldings(portfolioId);
     }
 
     getHoldingsAsOf(portfolioId: number, date: string) {
-        return transactionService.findSecuritiesHeldAsOf(
+        return this.transactionService.findSecuritiesHeldAsOf(
             portfolioId,
             date
         );
@@ -45,14 +49,14 @@ export class PortfolioService {
         date: string,
         exchangeCode: string
     ) {
-        const holdings = transactionService.findSecuritiesHeldAsOf(
+        const holdings = this.transactionService.findSecuritiesHeldAsOf(
             portfolioId,
             date
         );
 
         const positions = holdings.map((holding) => {
             const listing =
-                securityRepository.findListingBySecurityAndExchange(
+                this.securityRepository.findListingBySecurityAndExchange(
                     holding.security_id,
                     exchangeCode
                 ) as { listing_id: number } | undefined;
@@ -63,7 +67,7 @@ export class PortfolioService {
                 );
             }
 
-            const price = marketPriceRepository.findByListingAndDate(
+            const price = this.marketPriceRepository.findByListingAndDate(
                 listing.listing_id,
                 date
             ) as {
