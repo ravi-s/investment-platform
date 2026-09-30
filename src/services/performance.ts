@@ -23,7 +23,7 @@ export class PerformanceService {
     /**
      * Calculates portfolio performance at the supplied market price.
      *
-     * Transactions must be processed in chronological order. Each BUY adds a
+     * Transactions must be processed in date-wise order. Each BUY adds a
      * lot at its transaction price. Each SELL is matched against existing lots
      * using FIFO; if the sale exceeds available holdings, an error is thrown.
      * Realized gain is the sale proceeds minus the acquisition cost of the

@@ -86,4 +86,5 @@ describe("MarketPriceService", () => {
             )
         ).toThrow();
     });
+
 });
