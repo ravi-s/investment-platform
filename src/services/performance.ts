@@ -97,18 +97,25 @@ export class PerformanceService {
             0
         );
 
+        const averageCost =
+            quantity === 0 ? 0 : acquisitionCost / quantity;
+
         const marketValue =
             quantity * input.marketPrice;
 
         const unrealizedGain =
             marketValue - acquisitionCost;
 
+        const unrealizedGainPercent = acquisitionCost === 0 ? 0 : (unrealizedGain / acquisitionCost) * 100;
+
         return {
             quantity,
             acquisitionCost,
+            averageCost,
             marketValue,
             realizedGain,
             unrealizedGain,
+            unrealizedGainPercent,
         };
     }
 }

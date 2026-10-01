@@ -19,6 +19,7 @@ describe("PerformanceService", () => {
 
         expect(result.marketValue).toBe(220000);
         expect(result.unrealizedGain).toBe(20000);
+        expect(result.unrealizedGainPercent).toBe(10);
     });
 
     it("calculates unrealized gain from multiple BUY transactions", () => {
@@ -41,6 +42,7 @@ describe("PerformanceService", () => {
         });
 
         expect(result.marketValue).toBe(312000);
+        expect(result.averageCost).toBeCloseTo(250000 / 120);
         expect(result.unrealizedGain).toBe(62000);
     });
 
@@ -74,6 +76,33 @@ describe("PerformanceService", () => {
         expect(result.unrealizedGain).toBe(44000);
     });
 
+    it("calculates average cost for the remaining FIFO position", () => {
+        const service = new PerformanceService();
+
+        const result = service.calculate({
+            transactions: [
+                {
+                    type: "BUY",
+                    quantity: 100,
+                    price: 2000,
+                },
+                {
+                    type: "BUY",
+                    quantity: 20,
+                    price: 2500,
+                },
+                {
+                    type: "SELL",
+                    quantity: 30,
+                    price: 2400,
+                },
+            ],
+            marketPrice: 2600,
+        });
+
+        expect(result.averageCost).toBeCloseTo(190000 / 90);
+    });
+
     it("preserves a negative realized gain when selling at a loss", () => {
         const service = new PerformanceService();
 
@@ -95,6 +124,7 @@ describe("PerformanceService", () => {
 
         expect(result.realizedGain).toBe(-200);
         expect(result.quantity).toBe(0);
+        expect(result.averageCost).toBe(0);
         expect(result.unrealizedGain).toBe(0);
     });
 
