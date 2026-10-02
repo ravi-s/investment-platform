@@ -1,8 +1,9 @@
 import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { TransactionService } from "../services/transaction.js";
+import db from "../db/database.ts";
 
-const service = new TransactionService();
+const service = new TransactionService(db);
 
 const CreateTransactionSchema = z.object({
     portfolioId: z.number().int().positive(),

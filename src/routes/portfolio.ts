@@ -1,8 +1,9 @@
 import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PortfolioService } from "../services/portfolio.js";
+import db from "../db/database.ts";
 
-const service = new PortfolioService();
+const service = new PortfolioService(db);
 
 const CreatePortfolioSchema = z.object({
     userId: z.number().int().positive(),

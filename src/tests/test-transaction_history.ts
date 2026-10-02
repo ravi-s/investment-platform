@@ -1,8 +1,9 @@
 // src/test-history.ts
 
 import { TransactionService } from "../services/transaction.ts";
+import db from "../db/database.ts";
 
-const transactionService = new TransactionService();
+const transactionService = new TransactionService(db);
 
 console.log(
     "2026-09-21:",
