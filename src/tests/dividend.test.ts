@@ -3,13 +3,27 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import Database from "better-sqlite3";
 
 import { runMigrations } from "../db/migration-runner.ts";
+import { InvestmentEventRepository } from "../repositories/investment-event.js";
 import { TransactionService } from "../services/transaction.js";
 import { DividendService } from "../services/dividend.js";
+import { InvestmentEventService } from "../services/investment-event.js";
 
 describe("DividendService", () => {
     let db: Database.Database;
     let transactionService: TransactionService;
     let dividendService: DividendService;
+    let event:
+        | {
+            id: number;
+            security_id: number;
+            event_type: "DIVIDEND";
+            ex_date: string;
+            record_date: string;
+            payment_date: string;
+            amount_per_unit: number;
+            currency: string;
+        }
+        | undefined;
 
     beforeAll(() => {
         db = new Database(":memory:");
@@ -35,6 +49,18 @@ describe("DividendService", () => {
 
         transactionService = new TransactionService(db);
         dividendService = new DividendService();
+
+        const eventRepository = new InvestmentEventRepository(db);
+
+        event = eventRepository.create(
+            1,
+            "DIVIDEND",
+            "2026-09-10",
+            "2026-09-11",
+            "2026-09-25",
+            10,
+            "INR"
+        );
     });
 
     afterAll(() => {
@@ -50,7 +76,7 @@ describe("DividendService", () => {
         expect(result).toBe(700);
     });
 
-    it("calculates dividend income using the holding on the record date", () => {
+    it("calculates dividend income using the holding on the investment event record date", () => {
         transactionService.create(
             1,
             1,
@@ -69,17 +95,40 @@ describe("DividendService", () => {
             "2026-09-10"
         );
 
+        if (!event) {
+            throw new Error("Investment event was not created");
+        }
+
         const eligibleQuantity = transactionService.getHoldingAsOf(
             1,
             1,
-            "2026-09-15"
+            event.record_date
         );
 
         expect(eligibleQuantity).toBe(70);
 
         const result = dividendService.calculate({
             eligibleQuantity,
-            amountPerUnit: 10,
+            amountPerUnit: event.amount_per_unit,
+        });
+
+        expect(result).toBe(700);
+    });
+
+    it("calculates dividend income for a portfolio from an investment event", () => {
+        const investmentEventService = new InvestmentEventService(
+            new InvestmentEventRepository(db),
+            transactionService,
+            dividendService
+        );
+
+        if (!event) {
+            throw new Error("Investment event was not created");
+        }
+
+        const result = investmentEventService.calculateDividendIncome({
+            portfolioId: 1,
+            investmentEventId: event.id,
         });
 
         expect(result).toBe(700);
