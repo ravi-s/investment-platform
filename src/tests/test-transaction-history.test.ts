@@ -220,3 +220,69 @@ describe("TransactionService history", () => {
         ]);
     });
 });
+
+describe("TransactionService stock-split history", () => {
+    it("adjusts historical quantity for a 1:2 split on its effective date", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Split History User", "split-history@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                    INSERT INTO portfolios (user_id, name)
+                    VALUES (?, ?)
+                `).run(1, "Split History Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                    INSERT INTO securities (name)
+                    VALUES (?)
+                `).run("Split History Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-22"
+            );
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                1,
+                2,
+                "2026-09-23"
+            );
+
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-22"
+                )
+            ).toBe(10);
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-23"
+                )
+            ).toBe(20);
+        } finally {
+            db.close();
+        }
+    });
+});

@@ -1,12 +1,9 @@
 import type Database from "better-sqlite3";
-import db from "../db/database.js";
 import { HoldingRepository } from "../repositories/holding.js";
 import { PortfolioRepository } from "../repositories/portfolio.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { TransactionRepository } from "../repositories/transaction.js";
 import { previousDate } from "../utils/date.js";
-
-
 
 export class TransactionService {
     private readonly transactionRepository: TransactionRepository;
@@ -20,24 +17,15 @@ export class TransactionService {
         this.portfolioRepository = new PortfolioRepository(db);
         this.securityRepository = new SecurityRepository(db);
     }
+
     /**
      * Creates a transaction and updates the corresponding holding atomically.
      *
-     * Validation and portfolio/security lookups happen before opening the
-     * database transaction because they do not mutate state. All operations
-     * that can leave related records inconsistent are performed inside the
-     * transaction callback; if any operation throws, the transaction is
-     * rolled back and neither the transaction nor holding changes persist.
-     *
      * BUY transactions increase an existing holding or create one when the
-     * investor does not currently own the security. SELL transactions require
-     * an existing holding and reject quantities greater than the available
-     * balance. A quantity equal to the holding balance is allowed; the
-     * repository is responsible for persisting the resulting zero quantity.
+     * investor does not currently own the security.
      *
-     * Keep the transaction creation and holding update in the same database
-     * transaction. Splitting these operations could produce a transaction
-     * history that does not match the current portfolio position.
+     * SELL transactions require an existing holding and reject quantities
+     * greater than the available balance.
      */
     create(
         portfolioId: number,
@@ -47,9 +35,6 @@ export class TransactionService {
         price: number,
         transactionDate: string
     ) {
-        // Reject invalid economic values before touching the database. Zero
-        // or negative values would make the holding balance ambiguous and
-        // should never be represented as a trade.
         if (quantity <= 0) {
             throw new Error("Quantity must be greater than 0");
         }
@@ -58,9 +43,6 @@ export class TransactionService {
             throw new Error("Price must be greater than 0");
         }
 
-        // Verify referenced entities before starting the write transaction so
-        // callers receive domain-specific errors instead of repository or
-        // foreign-key errors.
         const portfolio = this.portfolioRepository.findById(portfolioId);
         if (!portfolio) {
             throw new Error("Portfolio not found");
@@ -72,8 +54,6 @@ export class TransactionService {
         }
 
         return this.db.transaction(() => {
-            // The transaction record is created before the holding is changed
-            // so both records are committed or rolled back together.
             const transaction = this.transactionRepository.create(
                 portfolioId,
                 securityId,
@@ -83,22 +63,19 @@ export class TransactionService {
                 transactionDate
             );
 
-            // Read the position inside the database transaction. This keeps
-            // the decision to create or update a holding in the same atomic
-            // unit as the write operations below.
-            const holding = this.holdingRepository.findByPortfolioAndSecurity(
-                portfolioId,
-                securityId
-            );
+            const holding =
+                this.holdingRepository.findByPortfolioAndSecurity(
+                    portfolioId,
+                    securityId
+                );
 
             if (type === "BUY") {
                 if (holding) {
-                    // Repository quantities are adjusted by a delta rather
-                    // than replacing the stored balance.
-                    this.holdingRepository.updateQuantity(holding.id, quantity);
+                    this.holdingRepository.updateQuantity(
+                        holding.id,
+                        quantity
+                    );
                 } else {
-                    // The first purchase establishes the portfolio/security
-                    // position and its initial quantity.
                     this.holdingRepository.create(
                         portfolioId,
                         securityId,
@@ -106,9 +83,6 @@ export class TransactionService {
                     );
                 }
             } else {
-                // A sale cannot create a position and must never reduce a
-                // holding below zero. These checks also provide stable domain
-                // errors for API consumers.
                 if (!holding) {
                     throw new Error("Holding not found");
                 }
@@ -117,26 +91,79 @@ export class TransactionService {
                     throw new Error("Insufficient holding");
                 }
 
-                // Pass a negative delta for SELL so the repository decreases
-                // the existing quantity by the amount sold.
-                this.holdingRepository.updateQuantity(holding.id, -quantity);
+                this.holdingRepository.updateQuantity(
+                    holding.id,
+                    -quantity
+                );
             }
 
             return transaction;
         })();
     }
 
+    /**
+     * Records a stock split as a historical event.
+     *
+     * The split does not directly modify the current holding. Historical
+     * reconstruction applies the split to the open position at its
+     * effective transaction date.
+     */
+    createSplit(
+        portfolioId: number,
+        securityId: number,
+        numerator: number,
+        denominator: number,
+        transactionDate: string
+    ) {
+        if (numerator <= 0 || !Number.isInteger(numerator)) {
+            throw new Error(
+                "Split numerator must be a positive integer"
+            );
+        }
+
+        if (denominator <= 0 || !Number.isInteger(denominator)) {
+            throw new Error(
+                "Split denominator must be a positive integer"
+            );
+        }
+
+        const portfolio = this.portfolioRepository.findById(portfolioId);
+        if (!portfolio) {
+            throw new Error("Portfolio not found");
+        }
+
+        const security = this.securityRepository.findById(securityId);
+        if (!security) {
+            throw new Error("Security not found");
+        }
+
+        return this.transactionRepository.createSplit(
+            portfolioId,
+            securityId,
+            numerator,
+            denominator,
+            transactionDate
+        );
+    }
+
     findById(id: number) {
         return this.transactionRepository.findById(id);
     }
 
-    findByPortfolioId(portfolioId: number, from?: string, to?: string) {
-        // Date-only strings compare correctly lexicographically (YYYY-MM-DD).
+    findByPortfolioId(
+        portfolioId: number,
+        from?: string,
+        to?: string
+    ) {
         if (from !== undefined && to !== undefined && from > to) {
             throw new Error("Invalid date range");
         }
 
-        return this.transactionRepository.findByPortfolioId(portfolioId, from, to);
+        return this.transactionRepository.findByPortfolioId(
+            portfolioId,
+            from,
+            to
+        );
     }
 
     getHoldingAsOf(
@@ -144,35 +171,37 @@ export class TransactionService {
         securityId: number,
         date: string
     ): number {
-        // Include all transactions through the requested date so the result
-        // represents the security's balance at the end of that day.
-        const transactions = this.transactionRepository.findByPortfolioId(
-            portfolioId,
-            undefined,
-            date
-        );
+        const transactions =
+            this.transactionRepository.findByPortfolioId(
+                portfolioId,
+                undefined,
+                date
+            );
 
         let quantity = 0;
 
-        // Apply only transactions for the requested security. Reversing the
-        // repository result preserves chronological balance reconstruction.
         for (const transaction of [...transactions].reverse() as Array<{
             security_id: number;
             type: "BUY" | "SELL";
             quantity: number;
+            split_numerator: number;
+            split_denominator: number;
         }>) {
             if (transaction.security_id !== securityId) {
                 continue;
             }
-
+            console.log("REPLAY TRANSACTION", transaction);
             if (transaction.type === "BUY") {
                 quantity += transaction.quantity;
-            } else {
+            } else if (transaction.type === "SELL") {
                 quantity -= transaction.quantity;
+            }
+            else if (transaction.type === "SPLIT") {
+                // Adjust the quantity based on the split ratio
+                quantity = quantity * (transaction.split_denominator / transaction.split_numerator);
             }
         }
 
-        // Return the net quantity held after all applicable transactions.
         return quantity;
     }
 
@@ -182,74 +211,66 @@ export class TransactionService {
         from: string,
         to: string
     ): number {
-        // A change can only be calculated across a valid, chronological range.
         if (from > to) {
             throw new Error("Invalid date range");
         }
 
-        // Get the balance immediately before the range starts. Using the
-        // previous date keeps transactions on `from` inside the calculation.
         const beforeStart = this.getHoldingAsOf(
             portfolioId,
             securityId,
             previousDate(from)
         );
 
-        // Get the balance at the end of the range, including transactions on
-        // the `to` date.
         const atEnd = this.getHoldingAsOf(
             portfolioId,
             securityId,
             to
         );
 
-        // The difference between the ending and starting balances is the net
-        // holding change during the requested period.
         return atEnd - beforeStart;
     }
 
-    /** Returns transactions for a portfolio and 
-     * security within an optional date range. 
-     * 
-     * */
     findTransactionsForSecurity(
         portfolioId: number,
         securityId: number,
         from?: string,
         to?: string
     ) {
-        const transactions = this.transactionRepository.findByPortfolioId(
-            portfolioId,
-            from,
-            to
-        );
+        const transactions =
+            this.transactionRepository.findByPortfolioId(
+                portfolioId,
+                from,
+                to
+            );
 
-        return (transactions as Array<{ security_id: number }>).filter(
-            (transaction) => transaction.security_id === securityId
+        return (
+            transactions as Array<{ security_id: number }>
+        ).filter(
+            (transaction) =>
+                transaction.security_id === securityId
         );
     }
 
-    /**
-     * Returns each security with a positive holding in the portfolio as of the
-     * given date, along with its calculated quantity.
-     */
     findSecuritiesHeldAsOf(
         portfolioId: number,
         date: string
     ) {
-        const transactions = this.transactionRepository.findByPortfolioId(
-            portfolioId,
-            undefined,
-            date
-        ) as Array<{ security_id: number; type: string; quantity: number }>;
+        const transactions =
+            this.transactionRepository.findByPortfolioId(
+                portfolioId,
+                undefined,
+                date
+            ) as Array<{
+                security_id: number;
+                type: string;
+                quantity: number;
+            }>;
 
-        // Reconstruct holdings using transactions dated on or before the requested date.
         const quantities = new Map<number, number>();
 
-        // Apply transactions in chronological order: buys increase holdings,
-        // while other transaction types decrease them.
         for (const transaction of [...transactions].reverse()) {
-            const currentQuantity = quantities.get(transaction.security_id) ?? 0;
+            const currentQuantity =
+                quantities.get(transaction.security_id) ?? 0;
 
             if (transaction.type === "BUY") {
                 quantities.set(
@@ -272,27 +293,21 @@ export class TransactionService {
             }));
     }
 
-    /**
-     * Reconstructs the portfolio's holdings as of the specified date.
-     * Transactions are returned newest-first, so they are replayed in
-     * chronological order; BUY transactions add quantity and acquisition
-     * cost, while SELL transactions reduce the held quantity. Positions with
-     * no remaining shares are omitted from the returned composition.
-     */
     getPortfolioCompositionAsOf(
         portfolioId: number,
         date: string
     ) {
-        const transactions = this.transactionRepository.findByPortfolioId(
-            portfolioId,
-            undefined,
-            date
-        ) as Array<{
-            security_id: number;
-            type: "BUY" | "SELL";
-            quantity: number;
-            price: number;
-        }>;
+        const transactions =
+            this.transactionRepository.findByPortfolioId(
+                portfolioId,
+                undefined,
+                date
+            ) as Array<{
+                security_id: number;
+                type: "BUY" | "SELL";
+                quantity: number;
+                price: number;
+            }>;
 
         const composition = new Map<
             number,
@@ -302,13 +317,12 @@ export class TransactionService {
             }
         >();
 
-        // Transactions are returned newest-first, so reconstruct
-        // the historical state chronologically.
         for (const transaction of [...transactions].reverse()) {
-            const current = composition.get(transaction.security_id) ?? {
-                quantity: 0,
-                acquisition_amount: 0,
-            };
+            const current =
+                composition.get(transaction.security_id) ?? {
+                    quantity: 0,
+                    acquisition_amount: 0,
+                };
 
             if (transaction.type === "BUY") {
                 current.quantity += transaction.quantity;
@@ -318,15 +332,22 @@ export class TransactionService {
                 current.quantity -= transaction.quantity;
             }
 
-            composition.set(transaction.security_id, current);
+            composition.set(
+                transaction.security_id,
+                current
+            );
         }
 
         return Array.from(composition.entries())
-            .filter(([, position]) => position.quantity > 0)
+            .filter(
+                ([, position]) =>
+                    position.quantity > 0
+            )
             .map(([security_id, position]) => ({
                 security_id,
                 quantity: position.quantity,
-                acquisition_amount: position.acquisition_amount,
+                acquisition_amount:
+                    position.acquisition_amount,
             }));
     }
 }
