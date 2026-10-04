@@ -307,4 +307,36 @@ describe("PerformanceService", () => {
         expect(result.unrealizedGain).toBe(0);
     });
 
+    it("adjusts FIFO cost basis after a stock split", () => {
+        const service = new PerformanceService();
+
+        const result = service.calculate({
+            transactions: [
+                {
+                    type: "BUY",
+                    quantity: 10,
+                    price: 100,
+                },
+                {
+                    type: "SPLIT",
+                    split_numerator: 2,
+                    split_denominator: 1,
+                },
+                {
+                    type: "SELL",
+                    quantity: 10,
+                    price: 60,
+                },
+            ],
+            marketPrice: 60,
+        });
+
+        expect(result.quantity).toBe(10);
+        expect(result.realizedGain).toBe(100);
+        expect(result.acquisitionCost).toBe(500);
+        expect(result.averageCost).toBe(50);
+        expect(result.marketValue).toBe(600);
+        expect(result.unrealizedGain).toBe(100);
+    });
+
 });

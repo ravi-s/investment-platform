@@ -1,7 +1,9 @@
 type Transaction = {
-    type: "BUY" | "SELL";
-    quantity: number;
-    price: number;
+    type: "BUY" | "SELL" | "SPLIT";
+    quantity?: number;
+    price?: number;
+    split_numerator?: number;
+    split_denominator?: number;
 };
 
 type Lot = {
@@ -45,16 +47,28 @@ export class PerformanceService {
         for (const transaction of input.transactions) {
             if (transaction.type === "BUY") {
                 lots.push({
-                    quantity: transaction.quantity,
-                    price: transaction.price,
+                    quantity: transaction.quantity!,
+                    price: transaction.price!,
                 });
+
+                continue;
+            }
+            if (transaction.type === "SPLIT") {
+                const factor =
+                    transaction.split_numerator! /
+                    transaction.split_denominator!;
+
+                for (const lot of lots) {
+                    lot.quantity *= factor;
+                    lot.price /= factor;
+                }
 
                 continue;
             }
 
             let remainingToSell = transaction.quantity;
 
-            while (remainingToSell > 0) {
+            while (remainingToSell! > 0) {
                 const lot = lots[0];
 
                 if (!lot) {
@@ -64,7 +78,7 @@ export class PerformanceService {
                 }
 
                 const matchedQuantity = Math.min(
-                    remainingToSell,
+                    remainingToSell!,
                     lot.quantity
                 );
 
