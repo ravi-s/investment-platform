@@ -260,8 +260,8 @@ describe("TransactionService stock-split history", () => {
             transactionService.createSplit(
                 portfolioId,
                 securityId,
-                1,
                 2,
+                1,
                 "2026-09-23"
             );
 
@@ -281,6 +281,306 @@ describe("TransactionService stock-split history", () => {
                     "2026-09-23"
                 )
             ).toBe(20);
+        } finally {
+            db.close();
+        }
+    });
+
+    it("adjusts all accumulated lots for a 1:2 split", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Multiple Lot Split User", "multiple-lot-split@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Multiple Lot Split Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Multiple Lot Split Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-21"
+            );
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                5,
+                110,
+                "2026-09-22"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-23"
+            );
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-22"
+                )
+            ).toBe(15);
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-23"
+                )
+            ).toBe(30);
+        } finally {
+            db.close();
+        }
+    });
+
+    it("does not adjust a buy that occurs after the split", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Post Split Buy User", "post-split-buy@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Post Split Buy Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Post Split Buy Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-21"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-23"
+            );
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                5,
+                60,
+                "2026-09-24"
+            );
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-23"
+                )
+            ).toBe(20);
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-24"
+                )
+            ).toBe(25);
+        } finally {
+            db.close();
+        }
+    });
+
+    it("adjusts the remaining holding after a sell before the split", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Sell Before Split User", "sell-before-split@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Sell Before Split Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Sell Before Split Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-21"
+            );
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "SELL",
+                4,
+                120,
+                "2026-09-22"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-23"
+            );
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-22"
+                )
+            ).toBe(6);
+
+            expect(
+                transactionService.getHoldingAsOf(
+                    portfolioId,
+                    securityId,
+                    "2026-09-23"
+                )
+            ).toBe(12);
+        } finally {
+            db.close();
+        }
+    });
+
+    it("preserves acquisition amount through a stock split", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run(
+                "Split Acquisition User",
+                "split-acquisition@example.com"
+            );
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Split Acquisition Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Split Acquisition Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-22"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-23"
+            );
+
+            expect(
+                transactionService.getPortfolioCompositionAsOf(
+                    portfolioId,
+                    "2026-09-22"
+                )
+            ).toEqual([
+                {
+                    security_id: securityId,
+                    quantity: 10,
+                    acquisition_amount: 1000,
+                },
+            ]);
+
+            expect(
+                transactionService.getPortfolioCompositionAsOf(
+                    portfolioId,
+                    "2026-09-23"
+                )
+            ).toEqual([
+                {
+                    security_id: securityId,
+                    quantity: 20,
+                    acquisition_amount: 1000,
+                },
+            ]);
         } finally {
             db.close();
         }

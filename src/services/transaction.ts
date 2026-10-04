@@ -190,7 +190,6 @@ export class TransactionService {
             if (transaction.security_id !== securityId) {
                 continue;
             }
-            console.log("REPLAY TRANSACTION", transaction);
             if (transaction.type === "BUY") {
                 quantity += transaction.quantity;
             } else if (transaction.type === "SELL") {
@@ -198,7 +197,7 @@ export class TransactionService {
             }
             else if (transaction.type === "SPLIT") {
                 // Adjust the quantity based on the split ratio
-                quantity = quantity * (transaction.split_denominator / transaction.split_numerator);
+                quantity = quantity * (transaction.split_numerator! / transaction.split_denominator!);
             }
         }
 
@@ -304,7 +303,9 @@ export class TransactionService {
                 date
             ) as Array<{
                 security_id: number;
-                type: "BUY" | "SELL";
+                type: "BUY" | "SELL" | "SPLIT";
+                split_numerator: number | null;
+                split_denominator: number | null;
                 quantity: number;
                 price: number;
             }>;
@@ -328,8 +329,13 @@ export class TransactionService {
                 current.quantity += transaction.quantity;
                 current.acquisition_amount +=
                     transaction.quantity * transaction.price;
-            } else {
+            } else if (transaction.type === "SELL") {
                 current.quantity -= transaction.quantity;
+            } else if (transaction.type === "SPLIT") {
+                current.quantity =
+                    current.quantity *
+                    (transaction.split_numerator! /
+                        transaction.split_denominator!);
             }
 
             composition.set(
