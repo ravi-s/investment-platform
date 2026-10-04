@@ -263,6 +263,8 @@ export class TransactionService {
                 security_id: number;
                 type: string;
                 quantity: number;
+                split_numerator: number | null;
+                split_denominator: number | null;
             }>;
 
         const quantities = new Map<number, number>();
@@ -276,10 +278,17 @@ export class TransactionService {
                     transaction.security_id,
                     currentQuantity + transaction.quantity
                 );
-            } else {
+            } else if (transaction.type === "SELL") {
                 quantities.set(
                     transaction.security_id,
                     currentQuantity - transaction.quantity
+                );
+            } else if (transaction.type === "SPLIT") {
+                quantities.set(
+                    transaction.security_id,
+                    currentQuantity *
+                    (transaction.split_numerator! /
+                        transaction.split_denominator!)
                 );
             }
         }
