@@ -643,4 +643,165 @@ describe("TransactionService stock-split history", () => {
             db.close();
         }
     });
+    it("persists and retrieves a stock split transaction", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Persistence User", "persistence@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Persistence Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Persistence Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            const split = transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-30"
+            ) as {
+                id: number;
+                portfolio_id: number;
+                security_id: number;
+                type: string;
+                split_numerator: number;
+                split_denominator: number;
+                transaction_date: string;
+                quantity: number | null;
+                price: number | null;
+            };
+
+            expect(split).toMatchObject({
+                portfolio_id: portfolioId,
+                security_id: securityId,
+                type: "SPLIT",
+                split_numerator: 2,
+                split_denominator: 1,
+                transaction_date: "2026-09-30",
+            });
+
+            expect(split.quantity).toBeNull();
+            expect(split.price).toBeNull();
+
+            const retrieved = transactionService.findById(split.id) as typeof split;
+
+            expect(retrieved).toMatchObject({
+                id: split.id,
+                portfolio_id: portfolioId,
+                security_id: securityId,
+                type: "SPLIT",
+                split_numerator: 2,
+                split_denominator: 1,
+                transaction_date: "2026-09-30",
+            });
+
+            expect(retrieved.quantity).toBeNull();
+            expect(retrieved.price).toBeNull();
+
+
+        } finally {
+            db.close();
+        }
+    });
+
+    it("returns stock split transactions through portfolio queries", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Query User", "query@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Query Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Query Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-29"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-30"
+            );
+
+            const transactions = transactionService.findByPortfolioId(
+                portfolioId,
+                "2026-09-29",
+                "2026-09-30"
+            ) as Array<{
+                type: string;
+                quantity: number | null;
+                price: number | null;
+                split_numerator: number | null;
+                split_denominator: number | null;
+                transaction_date: string;
+            }>;
+
+            expect(transactions).toHaveLength(2);
+
+            // Newest transaction first.
+            expect(transactions[0]).toMatchObject({
+                type: "SPLIT",
+                quantity: null,
+                price: null,
+                split_numerator: 2,
+                split_denominator: 1,
+                transaction_date: "2026-09-30",
+            });
+
+            expect(transactions[1]).toMatchObject({
+                type: "BUY",
+                quantity: 10,
+                price: 100,
+                split_numerator: null,
+                split_denominator: null,
+                transaction_date: "2026-09-29",
+            });
+        } finally {
+            db.close();
+        }
+    });
 });
