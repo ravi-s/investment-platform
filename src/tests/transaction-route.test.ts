@@ -145,5 +145,173 @@ describe("Transaction routes", () => {
             error: "Transaction not found",
         });
     });
+    it("rejects a SPLIT with an invalid numerator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 0,
+                splitDenominator: 1,
+                transactionDate: "2026-09-30",
+            },
+        });
 
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a SPLIT with an invalid denominator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 2,
+                splitDenominator: 0,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a SPLIT with a non-integer numerator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 2.5,
+                splitDenominator: 1,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+    it("rejects a SPLIT with a non-integer denominator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 2,
+                splitDenominator: 1.5,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+    it("rejects a SPLIT without a numerator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitDenominator: 1,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a SPLIT without a denominator", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 2,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("creates a SELL transaction through the API", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-09-29"
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SELL",
+                quantity: 4,
+                price: 120,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.json()).toMatchObject({
+            portfolio_id: portfolioId,
+            security_id: securityId,
+            type: "SELL",
+            quantity: 4,
+            price: 120,
+            transaction_date: "2026-09-30",
+        });
+    });
+
+    it("rejects a SELL when the holding is insufficient", async () => {
+        const isolatedPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(1, "Insufficient Sell Portfolio").lastInsertRowid
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-09-29"
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId: isolatedPortfolioId,
+                securityId,
+                type: "SELL",
+                quantity: 11,
+                price: 120,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(409);
+
+        expect(response.json()).toEqual({
+            error: "Insufficient holding",
+        });
+    });
 });
