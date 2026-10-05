@@ -5,12 +5,17 @@ import { SecurityRepository } from "../repositories/security.js";
 import { TransactionRepository } from "../repositories/transaction.js";
 import { previousDate } from "../utils/date.js";
 
+/**
+ * Coordinates transaction writes and reconstructs portfolio holdings from
+ * transaction history.
+ */
 export class TransactionService {
     private readonly transactionRepository: TransactionRepository;
     private readonly holdingRepository: HoldingRepository;
     private readonly portfolioRepository: PortfolioRepository;
     private readonly securityRepository: SecurityRepository;
 
+    /** Initializes the repositories used to persist and query portfolio data. */
     constructor(private readonly db: Database.Database) {
         this.transactionRepository = new TransactionRepository(db);
         this.holdingRepository = new HoldingRepository(db);
@@ -146,10 +151,15 @@ export class TransactionService {
         );
     }
 
+    /** Returns a transaction by ID, or `undefined` when no match exists. */
     findById(id: number) {
         return this.transactionRepository.findById(id);
     }
 
+    /**
+     * Returns a portfolio's transactions, optionally limited to a date range.
+     * Throws when both bounds are supplied and the start is after the end.
+     */
     findByPortfolioId(
         portfolioId: number,
         from?: string,
@@ -166,6 +176,7 @@ export class TransactionService {
         );
     }
 
+    /** Reconstructs the quantity of a security held through the specified date. */
     getHoldingAsOf(
         portfolioId: number,
         securityId: number,
@@ -204,6 +215,7 @@ export class TransactionService {
         return quantity;
     }
 
+    /** Returns the net change in a security holding over the inclusive date range. */
     getHoldingChange(
         portfolioId: number,
         securityId: number,
@@ -229,6 +241,7 @@ export class TransactionService {
         return atEnd - beforeStart;
     }
 
+    /** Finds a portfolio's transactions for one security, with optional date bounds. */
     findTransactionsForSecurity(
         portfolioId: number,
         securityId: number,
@@ -250,6 +263,7 @@ export class TransactionService {
         );
     }
 
+    /** Returns securities with positive reconstructed quantities as of the date. */
     findSecuritiesHeldAsOf(
         portfolioId: number,
         date: string
@@ -301,6 +315,10 @@ export class TransactionService {
             }));
     }
 
+    /**
+     * Reconstructs positive portfolio positions and their acquisition amounts
+     * as of the specified date, applying transaction and split history.
+     */
     getPortfolioCompositionAsOf(
         portfolioId: number,
         date: string
