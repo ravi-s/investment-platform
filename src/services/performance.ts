@@ -66,9 +66,9 @@ export class PerformanceService {
                 continue;
             }
 
-            let remainingToSell = transaction.quantity;
+            let remainingToSell = transaction.quantity!;
 
-            while (remainingToSell! > 0) {
+            while (remainingToSell > 0) {
                 const lot = lots[0];
 
                 if (!lot) {
@@ -78,7 +78,7 @@ export class PerformanceService {
                 }
 
                 const matchedQuantity = Math.min(
-                    remainingToSell!,
+                    remainingToSell,
                     lot.quantity
                 );
 
@@ -86,7 +86,7 @@ export class PerformanceService {
                     matchedQuantity * lot.price;
 
                 const saleProceeds =
-                    matchedQuantity * transaction.price;
+                    matchedQuantity * transaction.price!;
 
                 realizedGain +=
                     saleProceeds - acquisitionCost;

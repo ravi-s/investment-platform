@@ -9,6 +9,7 @@ import { TransactionService } from "../services/transaction.js";
 describe("Transaction routes", () => {
     let app: FastifyInstance;
     let db: Database.Database;
+    let service: TransactionService;
     let portfolioId: number;
     let securityId: number;
 
@@ -37,11 +38,11 @@ describe("Transaction routes", () => {
             `).run("Route Security").lastInsertRowid
         );
 
-        const service = new TransactionService(db);
+        service = new TransactionService(db);
 
         app = Fastify();
 
-        await transactionRoutes(app, service);
+        await app.register(transactionRoutes, { service });
     });
 
     afterAll(async () => {
@@ -74,4 +75,75 @@ describe("Transaction routes", () => {
             transaction_date: "2026-09-29",
         });
     });
+
+    it("creates a SPLIT transaction through the API", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/transactions",
+            payload: {
+                portfolioId,
+                securityId,
+                type: "SPLIT",
+                splitNumerator: 2,
+                splitDenominator: 1,
+                transactionDate: "2026-09-30",
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.json()).toMatchObject({
+            portfolio_id: portfolioId,
+            security_id: securityId,
+            type: "SPLIT",
+            quantity: null,
+            price: null,
+            split_numerator: 2,
+            split_denominator: 1,
+            transaction_date: "2026-09-30",
+        });
+    });
+
+    it("retrieves a SPLIT transaction by ID through the API", async () => {
+        const split = service.createSplit(
+            portfolioId,
+            securityId,
+            2,
+            1,
+            "2026-09-30"
+        ) as { id: number };
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/transactions/${split.id}`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toMatchObject({
+            id: split.id,
+            portfolio_id: portfolioId,
+            security_id: securityId,
+            type: "SPLIT",
+            quantity: null,
+            price: null,
+            split_numerator: 2,
+            split_denominator: 1,
+            transaction_date: "2026-09-30",
+        });
+    });
+
+    it("returns 404 when retrieving a transaction that does not exist", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/transactions/999999",
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        expect(response.json()).toEqual({
+            error: "Transaction not found",
+        });
+    });
+
 });

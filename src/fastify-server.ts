@@ -1,9 +1,12 @@
 import Fastify from "fastify";
+// import type { FastifyPluginAsync } from "fastify";
 import { securityRoutes } from "./routes/security.js";
 import { userRoutes } from "./routes/user.js";
 import { portfolioRoutes } from "./routes/portfolio.js";
 import { holdingRoutes } from "./routes/holding.js";
 import { transactionRoutes } from "./routes/transaction.js";
+import db from "./db/database.js";
+import { TransactionService } from "./services/transaction.js";
 
 const app = Fastify({
     logger: true,
@@ -13,7 +16,9 @@ await app.register(securityRoutes);
 await app.register(userRoutes);
 await app.register(portfolioRoutes);
 await app.register(holdingRoutes);
-await app.register(transactionRoutes);
+await app.register(transactionRoutes, {
+    service: new TransactionService(db),
+});
 
 app.listen({ port: 3001 }, (err, address) => {
     if (err) {

@@ -1,18 +1,35 @@
 import { type FastifyInstance } from "fastify";
 import { z } from "zod";
-import { TransactionService } from "../services/transaction.js";
-// import db from "../db/database.ts";
+import type { TransactionService } from "../services/transaction.js";
 
-// const service = new TransactionService(db);
+const CreateTransactionSchema = z.discriminatedUnion("type", [
+    z.object({
+        portfolioId: z.number().int().positive(),
+        securityId: z.number().int().positive(),
+        type: z.literal("BUY"),
+        quantity: z.number().positive(),
+        price: z.number().positive(),
+        transactionDate: z.string().min(1),
+    }),
 
-const CreateTransactionSchema = z.object({
-    portfolioId: z.number().int().positive(),
-    securityId: z.number().int().positive(),
-    type: z.enum(["BUY", "SELL"]),
-    quantity: z.number().positive(),
-    price: z.number().positive(),
-    transactionDate: z.string().min(1),
-});
+    z.object({
+        portfolioId: z.number().int().positive(),
+        securityId: z.number().int().positive(),
+        type: z.literal("SELL"),
+        quantity: z.number().positive(),
+        price: z.number().positive(),
+        transactionDate: z.string().min(1),
+    }),
+
+    z.object({
+        portfolioId: z.number().int().positive(),
+        securityId: z.number().int().positive(),
+        type: z.literal("SPLIT"),
+        splitNumerator: z.number().int().positive(),
+        splitDenominator: z.number().int().positive(),
+        transactionDate: z.string().min(1),
+    }),
+]);
 
 const DateOnlySchema = z
     .string()
@@ -47,8 +64,10 @@ const AsOfQuerySchema = z.object({
 
 export async function transactionRoutes(
     app: FastifyInstance,
-    service: TransactionService
+    options: { service: TransactionService }
 ) {
+    const { service } = options;
+
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
 
@@ -60,14 +79,26 @@ export async function transactionRoutes(
         }
 
         try {
-            const transaction = service.create(
-                result.data.portfolioId,
-                result.data.securityId,
-                result.data.type,
-                result.data.quantity,
-                result.data.price,
-                result.data.transactionDate
-            );
+            let transaction;
+
+            if (result.data.type === "SPLIT") {
+                transaction = service.createSplit(
+                    result.data.portfolioId,
+                    result.data.securityId,
+                    result.data.splitNumerator,
+                    result.data.splitDenominator,
+                    result.data.transactionDate
+                );
+            } else {
+                transaction = service.create(
+                    result.data.portfolioId,
+                    result.data.securityId,
+                    result.data.type,
+                    result.data.quantity,
+                    result.data.price,
+                    result.data.transactionDate
+                );
+            }
 
             return reply.code(201).send(transaction);
         } catch (error) {
