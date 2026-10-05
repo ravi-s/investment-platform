@@ -804,4 +804,66 @@ describe("TransactionService stock-split history", () => {
             db.close();
         }
     });
+
+    it("adjusts securities held through a stock split", () => {
+        const db = new Database(":memory:");
+        db.pragma("foreign_keys = ON");
+
+        try {
+            runMigrations(db);
+
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Split User", "split@example.com");
+
+            const portfolioId = Number(
+                db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(1, "Split Portfolio").lastInsertRowid
+            );
+
+            const securityId = Number(
+                db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Split Security").lastInsertRowid
+            );
+
+            const transactionService = new TransactionService(db);
+
+            transactionService.create(
+                portfolioId,
+                securityId,
+                "BUY",
+                10,
+                100,
+                "2026-09-29"
+            );
+
+            transactionService.createSplit(
+                portfolioId,
+                securityId,
+                2,
+                1,
+                "2026-09-30"
+            );
+
+            const securities =
+                transactionService.findSecuritiesHeldAsOf(
+                    portfolioId,
+                    "2026-09-30"
+                );
+
+            expect(securities).toEqual([
+                {
+                    security_id: securityId,
+                    quantity: 20,
+                },
+            ]);
+        } finally {
+            db.close();
+        }
+    });
 });

@@ -1,9 +1,9 @@
 import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { TransactionService } from "../services/transaction.js";
-import db from "../db/database.ts";
+// import db from "../db/database.ts";
 
-const service = new TransactionService(db);
+// const service = new TransactionService(db);
 
 const CreateTransactionSchema = z.object({
     portfolioId: z.number().int().positive(),
@@ -45,7 +45,10 @@ const AsOfQuerySchema = z.object({
     asOf: DateOnlySchema,
 });
 
-export async function transactionRoutes(app: FastifyInstance) {
+export async function transactionRoutes(
+    app: FastifyInstance,
+    service: TransactionService
+) {
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
 
