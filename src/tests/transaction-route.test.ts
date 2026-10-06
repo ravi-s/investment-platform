@@ -480,4 +480,144 @@ describe("Transaction routes", () => {
             error: "Invalid date range",
         });
     });
+    it("returns the holding for a security as of a date", async () => {
+        const isolatedPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(1, "Holding As Of Portfolio").lastInsertRowid
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-10-01"
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "SELL",
+            3,
+            120,
+            "2026-10-05"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${isolatedPortfolioId}/securities/${securityId}/holding?asOf=2026-10-03`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual({
+            portfolio_id: isolatedPortfolioId,
+            security_id: securityId,
+            as_of: "2026-10-03",
+            quantity: 10,
+        });
+    });
+
+    it("returns the holding change for a security between two dates", async () => {
+        const isolatedPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(1, "Holding Change Portfolio").lastInsertRowid
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-10-01"
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "BUY",
+            5,
+            110,
+            "2026-10-05"
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "SELL",
+            3,
+            120,
+            "2026-10-08"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${isolatedPortfolioId}/securities/${securityId}/holding/change?from=2026-10-02&to=2026-10-08`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual({
+            portfolio_id: isolatedPortfolioId,
+            security_id: securityId,
+            from: "2026-10-02",
+            to: "2026-10-08",
+            quantity_change: 2,
+        });
+    });
+    it("returns securities held in a portfolio as of a date", async () => {
+        const isolatedPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(1, "Securities As Of Portfolio").lastInsertRowid
+        );
+
+        const secondSecurityId = Number(
+            db.prepare(`
+            INSERT INTO securities (name)
+            VALUES (?)
+        `).run("Second Route Security").lastInsertRowid
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-10-01"
+        );
+
+        service.create(
+            isolatedPortfolioId,
+            secondSecurityId,
+            "BUY",
+            5,
+            200,
+            "2026-10-05"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${isolatedPortfolioId}/securities?asOf=2026-10-03`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual([
+            {
+                security_id: securityId,
+                quantity: 10,
+            },
+        ]);
+    });
+
+
 });

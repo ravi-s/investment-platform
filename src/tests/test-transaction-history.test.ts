@@ -866,4 +866,5 @@ describe("TransactionService stock-split history", () => {
             db.close();
         }
     });
+
 });
