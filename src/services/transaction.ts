@@ -248,12 +248,11 @@ export class TransactionService {
         from?: string,
         to?: string
     ) {
-        const transactions =
-            this.transactionRepository.findByPortfolioId(
-                portfolioId,
-                from,
-                to
-            );
+        const transactions = this.findByPortfolioId(
+            portfolioId,
+            from,
+            to
+        );
 
         return (
             transactions as Array<{ security_id: number }>

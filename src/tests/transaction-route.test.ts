@@ -314,4 +314,170 @@ describe("Transaction routes", () => {
             error: "Insufficient holding",
         });
     });
+
+    it("returns transactions for a portfolio", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/transactions`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    portfolio_id: portfolioId,
+                    security_id: securityId,
+                    type: "BUY",
+                }),
+            ])
+        );
+    });
+
+    it("filters portfolio transactions by date range", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            5,
+            100,
+            "2026-10-01"
+        );
+
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            7,
+            110,
+            "2026-10-05"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/transactions?from=2026-10-02&to=2026-10-05`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    quantity: 7,
+                    transaction_date: "2026-10-05",
+                }),
+            ])
+        );
+
+        expect(response.json()).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    quantity: 5,
+                    transaction_date: "2026-10-01",
+                }),
+            ])
+        );
+    });
+
+    it("rejects an invalid transaction date range", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/transactions?from=2026-10-10&to=2026-10-05`,
+        });
+
+        expect(response.statusCode).toBe(400);
+
+        expect(response.json()).toEqual({
+            error: "Invalid date range",
+        });
+    });
+
+    it("returns transactions for a specific security in a portfolio", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            8,
+            100,
+            "2026-10-01"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    portfolio_id: portfolioId,
+                    security_id: securityId,
+                    type: "BUY",
+                    quantity: 8,
+                    price: 100,
+                    transaction_date: "2026-10-01",
+                }),
+            ])
+        );
+    });
+
+    it("filters security transactions by date range", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            6,
+            100,
+            "2026-10-01"
+        );
+
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            9,
+            110,
+            "2026-10-05"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions?from=2026-10-02&to=2026-10-05`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    quantity: 9,
+                    transaction_date: "2026-10-05",
+                }),
+            ])
+        );
+
+        expect(response.json()).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    quantity: 6,
+                    transaction_date: "2026-10-01",
+                }),
+            ])
+        );
+    });
+
+    it("rejects an invalid security transaction date range", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions?from=2026-10-10&to=2026-10-05`,
+        });
+
+        expect(response.statusCode).toBe(400);
+
+        expect(response.json()).toEqual({
+            error: "Invalid date range",
+        });
+    });
 });
