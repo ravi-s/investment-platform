@@ -1,16 +1,23 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { MarketPriceService } from "../services/market-price.js";
 
 import { portfolioRoutes } from "../routes/portfolio.js";
 import { runMigrations } from "../db/migration-runner.ts";
 import { PortfolioService } from "../services/portfolio.js";
+import { TransactionService } from "../services/transaction.ts";
 
 describe("Portfolio routes", () => {
     let app: FastifyInstance;
     let db: Database.Database;
     let service: PortfolioService;
+    let transactionService: TransactionService;
+    let marketPriceService: MarketPriceService;
+
     let portfolioId: number;
+    let securityId: number;
+    let listingId: number;
 
     beforeAll(async () => {
         db = new Database(":memory:");
@@ -29,12 +36,42 @@ describe("Portfolio routes", () => {
                 VALUES (?, ?)
             `).run(1, "Portfolio Route Test").lastInsertRowid
         );
+        securityId = Number(
+            db.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Test Security").lastInsertRowid
+        );
+        listingId = Number(
+            db.prepare(`
+                INSERT INTO listings (security_id, exchange_id, symbol)
+                VALUES (?, 1, 'Test Security')
+            `).run(securityId).lastInsertRowid
+        );
+        transactionService = new TransactionService(db);
+        marketPriceService = new MarketPriceService(db);
+
+        transactionService.create(
+            portfolioId,
+            Number(securityId),
+            "BUY",
+            100,
+            2500,
+            "2026-09-22"
+        );
+        marketPriceService.create(
+            "NSE",
+            "Test Security",
+            "2026-09-23",
+            2650
+        );
 
         service = new PortfolioService(db);
 
+
         app = Fastify();
 
-        await app.register(portfolioRoutes, { service });
+        await app.register(portfolioRoutes, { service, transactionService, marketPriceService });
     });
 
     afterAll(async () => {
@@ -49,5 +86,33 @@ describe("Portfolio routes", () => {
         });
 
         expect(response.statusCode).toBe(400);
+    });
+
+    it("returns portfolio valuation as of a date", async () => {
+
+
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual({
+            portfolio_id: portfolioId,
+            date: "2026-09-23",
+            exchange: "NSE",
+            positions: [
+                {
+                    security_id: securityId,
+                    listing_id: listingId,
+                    quantity: 100,
+                    close_price: 2650,
+                    market_value: 265000,
+                },
+            ],
+            total_market_value: 265000,
+        });
     });
 });
