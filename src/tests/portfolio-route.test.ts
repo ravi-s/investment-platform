@@ -145,4 +145,42 @@ describe("Portfolio routes", () => {
         });
     });
 
+    it("includes transactions on the valuation date but excludes transactions after it", async () => {
+        // Existing fixture:
+        // BUY 100 on 2026-09-22
+        //
+        // Add a transaction after the valuation date.
+        transactionService.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            50,
+            2600,
+            "2026-09-24"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual({
+            portfolio_id: portfolioId,
+            date: "2026-09-23",
+            exchange: "NSE",
+            positions: [
+                {
+                    security_id: securityId,
+                    listing_id: listingId,
+                    quantity: 100,
+                    close_price: 2650,
+                    market_value: 265000,
+                },
+            ],
+            total_market_value: 265000,
+        });
+    });
+
 });
