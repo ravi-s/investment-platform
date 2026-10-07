@@ -156,6 +156,15 @@ export async function portfolioRoutes(
                     result.data.exchange
                 );
             } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.message.startsWith("Historical price not found")
+                ) {
+                    return reply.code(422).send({
+                        error: error.message,
+                    });
+                }
+
                 return reply.code(404).send({
                     error:
                         error instanceof Error

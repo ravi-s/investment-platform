@@ -115,4 +115,34 @@ describe("Portfolio routes", () => {
             total_market_value: 265000,
         });
     });
+    it("returns 422 when historical price is unavailable", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-24&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(422);
+
+        expect(response.json()).toEqual({
+            error: `Historical price not found for listing ${listingId} on 2026-09-24`,
+        });
+    });
+
+    it("returns zero valuation when the portfolio has no holdings on the requested date", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-21&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.json()).toEqual({
+            portfolio_id: portfolioId,
+            date: "2026-09-21",
+            exchange: "NSE",
+            positions: [],
+            total_market_value: 0,
+        });
+    });
+
 });
