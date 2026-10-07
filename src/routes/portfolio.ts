@@ -2,6 +2,7 @@ import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PortfolioService } from "../services/portfolio.js";
 import db from "../db/database.ts";
+import { DateOnlySchema } from "../schema/date.ts";
 
 const service = new PortfolioService(db);
 
@@ -11,10 +12,7 @@ const CreatePortfolioSchema = z.object({
 });
 
 const PortfolioHistoryQuerySchema = z.object({
-    date: z.string().regex(
-        /^\d{4}-\d{2}-\d{2}$/,
-        "Date must be in YYYY-MM-DD format"
-    ),
+    date: DateOnlySchema,
 });
 const PortfolioValuationQuerySchema = z.object({
     date: PortfolioHistoryQuerySchema.shape.date,
