@@ -18,3 +18,4 @@ applyTo: "**/*.ts, **/*.tsx"
 - Use parameterized database queries. Keep multi-step writes atomic when partial completion would leave data inconsistent, and make schema changes through migrations.
 - In client code, keep browser-only APIs out of server-executed code, represent loading/error/empty states, and follow the UI framework and accessibility patterns already in use. Do not assume a framework when the project has not selected one.
 - Add or update focused Vitest coverage for behavior changes, following the existing test conventions.
+- Comments are valuable for explaining why code exists, especially for complex business logic or non-obvious decisions. Avoid restating what the code does; focus on the reasoning and context.
