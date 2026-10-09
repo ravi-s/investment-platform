@@ -257,4 +257,48 @@ describe("XirrService", () => {
         expect(result).toBeCloseTo(0.107966, 6);
     });
 
+    it("calculates the same XIRR when all cash flows are scaled by the same factor", () => {
+        const service = new XirrService();
+
+        const cashFlows = [
+            { date: "2026-01-01", amount: -100000 },
+            { date: "2026-07-01", amount: -50000 },
+            { date: "2027-01-01", amount: 165000 },
+        ];
+
+        const originalResult = service.calculate(cashFlows);
+
+        const scaledResult = service.calculate(
+            cashFlows.map((cashFlow) => ({
+                ...cashFlow,
+                amount: cashFlow.amount * 1000,
+            })),
+        );
+
+        expect(scaledResult).toBeCloseTo(originalResult, 10);
+    });
+
+
+    it("calculates the same XIRR for very small cash flows", () => {
+        const service = new XirrService();
+
+        const cashFlows = [
+            { date: "2026-01-01", amount: -0.1 },
+            { date: "2026-07-01", amount: -0.05 },
+            { date: "2027-01-01", amount: 0.165 },
+        ];
+
+        const result = service.calculate(cashFlows);
+
+        const expected = service.calculate([
+            { date: "2026-01-01", amount: -100000 },
+            { date: "2026-07-01", amount: -50000 },
+            { date: "2027-01-01", amount: 165000 },
+        ]);
+
+        expect(result).toBeCloseTo(expected, 10);
+    });
+
+
+
 });
