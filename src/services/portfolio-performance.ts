@@ -54,4 +54,6 @@ export class PortfolioPerformanceService {
 
         return this.xirrService.calculate(cashFlows);
     }
+
+
 }
