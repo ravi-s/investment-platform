@@ -104,6 +104,57 @@ describe("Transaction routes", () => {
         });
     });
 
+    it.each(["BUY", "SELL", "SPLIT"] as const)(
+        "rejects a %s transaction with an invalid calendar date",
+        async (type) => {
+            const transactionDetails =
+                type === "SPLIT"
+                    ? { splitNumerator: 2, splitDenominator: 1 }
+                    : { quantity: 1, price: 100 };
+
+            const response = await app.inject({
+                method: "POST",
+                url: "/api/transactions",
+                payload: {
+                    portfolioId,
+                    securityId,
+                    type,
+                    ...transactionDetails,
+                    transactionDate: "2026-02-30",
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+            expect(response.json()).toMatchObject({
+                error: "Invalid transaction data",
+            });
+        }
+    );
+
+    it.each(["BUY", "SELL", "SPLIT"] as const)(
+        "rejects a %s transaction with a malformed date",
+        async (type) => {
+            const transactionDetails =
+                type === "SPLIT"
+                    ? { splitNumerator: 2, splitDenominator: 1 }
+                    : { quantity: 1, price: 100 };
+
+            const response = await app.inject({
+                method: "POST",
+                url: "/api/transactions",
+                payload: {
+                    portfolioId,
+                    securityId,
+                    type,
+                    ...transactionDetails,
+                    transactionDate: "not-a-date",
+                },
+            });
+
+            expect(response.statusCode).toBe(400);
+        }
+    );
+
     it("retrieves a SPLIT transaction by ID through the API", async () => {
         const split = service.createSplit(
             portfolioId,

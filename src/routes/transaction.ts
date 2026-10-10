@@ -9,7 +9,7 @@ const CreateTransactionSchema = z.discriminatedUnion("type", [
         type: z.literal("BUY"),
         quantity: z.number().positive(),
         price: z.number().positive(),
-        transactionDate: z.string().min(1),
+        transactionDate: DateOnlySchema,
     }),
 
     z.object({
@@ -18,7 +18,7 @@ const CreateTransactionSchema = z.discriminatedUnion("type", [
         type: z.literal("SELL"),
         quantity: z.number().positive(),
         price: z.number().positive(),
-        transactionDate: z.string().min(1),
+        transactionDate: DateOnlySchema,
     }),
 
     z.object({
@@ -27,7 +27,7 @@ const CreateTransactionSchema = z.discriminatedUnion("type", [
         type: z.literal("SPLIT"),
         splitNumerator: z.number().int().positive(),
         splitDenominator: z.number().int().positive(),
-        transactionDate: z.string().min(1),
+        transactionDate: DateOnlySchema,
     }),
 ]);
 
