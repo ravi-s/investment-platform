@@ -184,4 +184,49 @@ describe("Portfolio routes", () => {
     });
 
 
+    it("returns portfolio XIRR using persisted transactions and ending market value", async () => {
+        // Arrange: create a separate portfolio for this test.
+        const testPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (1, ?)
+        `).run("Portfolio XIRR Test").lastInsertRowid
+        );
+
+        // Invest ₹250,000 exactly one year before the valuation date.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            100,
+            2500,
+            "2025-09-23"
+        );
+
+        // The existing fixture has an NSE closing price of ₹2,650
+        // for this security on 2026-09-23.
+
+        // Act
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+        });
+
+        // Assert
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        expect(body).toMatchObject({
+            portfolio_id: testPortfolioId,
+            date: "2026-09-23",
+            exchange: "NSE",
+            ending_market_value: 265000,
+        });
+
+        // Independent expected return:
+        // (₹265,000 / ₹250,000) - 1 = 6% over exactly one year.
+        expect(body.xirr).toBeCloseTo(0.06, 6);
+    });
+
 });
