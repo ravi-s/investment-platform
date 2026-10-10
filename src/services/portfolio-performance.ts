@@ -44,8 +44,17 @@ export class PortfolioPerformanceService {
         endingMarketValue: number;
     }): number {
 
-        // Validate before mapping so the non-null assertions below are backed
-        // by an explicit check, while split records remain exempt from prices.
+
+        if (!Number.isFinite(input.endingMarketValue)) {
+            throw new Error("Ending market value must be finite");
+        }
+
+        if (input.endingMarketValue < 0) {
+            throw new Error("Ending market value cannot be negative");
+        }
+
+        // Validate transactions before mapping so the non-null assertions below
+        // are safe. Split records are exempt because they do not create cash flows.
         for (const transaction of input.transactions) {
             if (transaction.type === "SPLIT") {
                 continue;
@@ -59,19 +68,31 @@ export class PortfolioPerformanceService {
                     `${transaction.type} transaction requires quantity and price`,
                 );
             }
-            if (transaction.quantity <= 0) {
+            if (
+                !Number.isFinite(transaction.quantity) ||
+                transaction.quantity <= 0
+            ) {
                 throw new Error(
-                    `${transaction.type} transaction quantity must be greater than zero`,
+                    `${transaction.type} transaction quantity must be a finite number greater than zero`,
                 );
             }
 
-            if (transaction.price <= 0) {
+            if (
+                !Number.isFinite(transaction.price) ||
+                transaction.price <= 0
+            ) {
                 throw new Error(
-                    `${transaction.type} transaction price must be greater than zero`,
+                    `${transaction.type} transaction price must be a finite number greater than zero`,
                 );
             }
-            if (input.endingMarketValue < 0) {
-                throw new Error("Ending market value cannot be negative");
+
+        }
+        // Validate dividend inputs before constructing cash flows.
+        for (const dividend of input.dividends ?? []) {
+            if (!Number.isFinite(dividend.amount) || dividend.amount <= 0) {
+                throw new Error(
+                    "Dividend amount must be a finite number greater than zero",
+                );
             }
         }
 
@@ -88,7 +109,8 @@ export class PortfolioPerformanceService {
                         : transaction.quantity! * transaction.price!,
             }));
 
-        // Include dividends as positive cash flows on their payment dates.
+        // Add dividends separately on their payment dates, preserving their
+        // timing in the XIRR calculation instead of treating them as one total.
         if (input.dividends) {
             input.dividends.forEach((dividend) => {
                 cashFlows.push({
@@ -98,8 +120,8 @@ export class PortfolioPerformanceService {
             });
         }
 
-        // Treat the portfolio's market value on the valuation date as a final
-        // inflow, representing the value an investor would receive on liquidation.
+        // Add the ending market value as a final inflow on the valuation date,
+        // representing what the investor could receive by liquidating the portfolio.
         cashFlows.push({
             date: input.valuationDate,
             amount: input.endingMarketValue,
