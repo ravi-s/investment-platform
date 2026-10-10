@@ -1,4 +1,5 @@
 import { XirrService } from "./xirr.js";
+import { DateOnlySchema } from "../schema/date.js";
 
 /** Describes a portfolio event used to build dated investment cash flows. */
 type PortfolioTransaction = {
@@ -45,6 +46,10 @@ export class PortfolioPerformanceService {
     }): number {
 
 
+        if (!DateOnlySchema.safeParse(input.valuationDate).success) {
+            throw new Error("Invalid valuation date");
+        }
+
         if (!Number.isFinite(input.endingMarketValue)) {
             throw new Error("Ending market value must be finite");
         }
@@ -55,7 +60,12 @@ export class PortfolioPerformanceService {
 
         // Validate transactions before mapping so the non-null assertions below
         // are safe. Split records are exempt because they do not create cash flows.
+
+
         for (const transaction of input.transactions) {
+            if (!DateOnlySchema.safeParse(transaction.date).success) {
+                throw new Error("Invalid transaction date");
+            }
             if (transaction.type === "SPLIT") {
                 continue;
             }
@@ -86,9 +96,16 @@ export class PortfolioPerformanceService {
                 );
             }
 
+
+
         }
         // Validate dividend inputs before constructing cash flows.
         for (const dividend of input.dividends ?? []) {
+
+            if (!DateOnlySchema.safeParse(dividend.paymentDate).success) {
+                throw new Error("Invalid dividend payment date");
+            }
+
             if (!Number.isFinite(dividend.amount) || dividend.amount <= 0) {
                 throw new Error(
                     "Dividend amount must be a finite number greater than zero",

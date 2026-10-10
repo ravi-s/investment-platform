@@ -307,4 +307,80 @@ describe("PortfolioPerformanceService", () => {
             "Dividend amount must be a finite number greater than zero",
         );
     });
+
+    it("rejects an invalid valuation date", () => {
+        expect(() =>
+            service.calculateXirr({
+                transactions: [
+                    {
+                        type: "BUY",
+                        date: "2025-01-01",
+                        quantity: 10,
+                        price: 100,
+                    },
+                ],
+                valuationDate: "2026-02-30",
+                endingMarketValue: 1200,
+            }),
+        ).toThrow();
+    });
+
+    it("rejects an invalid transaction date", () => {
+        expect(() =>
+            service.calculateXirr({
+                transactions: [
+                    {
+                        type: "BUY",
+                        date: "2026-02-30",
+                        quantity: 10,
+                        price: 100,
+                    },
+                ],
+                valuationDate: "2026-12-31",
+                endingMarketValue: 1200,
+            }),
+        ).toThrow("Invalid transaction date");
+    });
+
+    it("rejects an invalid dividend payment date", () => {
+        expect(() =>
+            service.calculateXirr({
+                transactions: [
+                    {
+                        type: "BUY",
+                        date: "2025-01-01",
+                        quantity: 10,
+                        price: 100,
+                    },
+                ],
+                dividends: [
+                    {
+                        paymentDate: "2026-02-30",
+                        amount: 100,
+                    },
+                ],
+                valuationDate: "2026-12-31",
+                endingMarketValue: 1200,
+            }),
+        ).toThrow("Invalid dividend payment date");
+    });
+
+
+    it("rejects a SPLIT transaction with an invalid date", () => {
+        expect(() =>
+            service.calculateXirr({
+                transactions: [
+                    {
+                        type: "SPLIT",
+                        date: "2026-02-30",
+                        split_numerator: 2,
+                        split_denominator: 1,
+                    },
+                ],
+                valuationDate: "2026-12-31",
+                endingMarketValue: 1200,
+            }),
+        ).toThrow("Invalid transaction date");
+    });
+
 });
