@@ -286,5 +286,107 @@ describe("Portfolio routes", () => {
         expect(body.xirr).toBeCloseTo(0.151341076476, 6);
     });
 
+    it("does not treat a stock split as an XIRR cash flow", async () => {
+        const testPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (1, ?)
+        `).run("Portfolio XIRR Split Test").lastInsertRowid
+        );
+
+        // Buy 100 shares at ₹2,500 each.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            100,
+            2500,
+            "2025-09-24"
+        );
+
+        // A 2:1 split doubles the quantity.
+        transactionService.createSplit(
+            testPortfolioId,
+            securityId,
+            2,
+            1,
+            "2026-03-24"
+        );
+
+        // After the split, 200 shares are worth ₹1,325 each.
+        // The economic value remains ₹265,000.
+        marketPriceService.create(
+            "NSE",
+            "Test Security",
+            "2026-09-24",
+            1325
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-24&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        expect(body).toMatchObject({
+            portfolio_id: testPortfolioId,
+            date: "2026-09-24",
+            exchange: "NSE",
+            ending_market_value: 265000,
+        });
+
+        // Only the original investment and ending value count as cash flows.
+        // The split itself must not create a cash flow.
+        expect(body.xirr).toBeCloseTo(0.06, 6);
+    });
+
+    it("excludes transactions after the valuation date from XIRR", async () => {
+        const testPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (1, ?)
+        `).run("Portfolio Historical XIRR Test").lastInsertRowid
+        );
+
+        // Included: invest ₹250,000 on September 23, 2025.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            100,
+            2500,
+            "2025-09-23"
+        );
+
+        // Excluded: this purchase occurs after the valuation date.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            50,
+            2600,
+            "2026-09-24"
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        // Only the original 100 shares count:
+        // 100 × ₹2,650 = ₹265,000.
+        expect(body.ending_market_value).toBe(265000);
+
+        // The original investment grows from ₹250,000 to ₹265,000
+        // over exactly 365 days: a 6% annualized return.
+        expect(body.xirr).toBeCloseTo(0.06, 6);
+    });
 
 });
