@@ -72,6 +72,7 @@ describe("TransactionService history", () => {
             portfolioId,
             tcsId,
             "BUY",
+
             4,
             200,
             "2026-09-22"

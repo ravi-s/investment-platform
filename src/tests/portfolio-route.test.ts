@@ -229,4 +229,62 @@ describe("Portfolio routes", () => {
         expect(body.xirr).toBeCloseTo(0.06, 6);
     });
 
+    it("calculates portfolio XIRR including SELL proceeds", async () => {
+        const testPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (1, ?)
+        `).run("Portfolio XIRR Sell Test").lastInsertRowid
+        );
+
+        // Invest ₹250,000.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            100,
+            2500,
+            "2025-09-23"
+        );
+
+        // Sell 40 shares for ₹120,000.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "SELL",
+            40,
+            3000,
+            "2026-03-23"
+        );
+
+        // The remaining 60 shares are valued at ₹2,650 each.
+        // Ending market value = 60 × ₹2,650 = ₹159,000.
+
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        expect(body).toMatchObject({
+            portfolio_id: testPortfolioId,
+            date: "2026-09-23",
+            exchange: "NSE",
+            ending_market_value: 159000,
+        });
+
+        // Independent cash-flow expectations:
+        // 2025-09-23: -₹250,000
+        // 2026-03-23: +₹120,000
+        // 2026-09-23: +₹159,000
+        //
+        // XIRR must solve the annualized return for these dated cash flows.
+        expect(body.xirr).toBeCloseTo(0.151341076476, 6);
+    });
+
+
 });
