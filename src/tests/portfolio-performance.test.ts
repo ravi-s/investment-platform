@@ -383,4 +383,105 @@ describe("PortfolioPerformanceService", () => {
         ).toThrow("Invalid transaction date");
     });
 
+    it("includes dividend income on the payment date when calculating XIRR", () => {
+        const result = service.calculateXirr({
+            transactions: [
+                {
+                    type: "BUY",
+                    date: "2025-01-01",
+                    quantity: 10,
+                    price: 100,
+                },
+            ],
+            dividends: [
+                {
+                    paymentDate: "2025-07-01",
+                    amount: 100,
+                },
+            ],
+            valuationDate: "2026-01-01",
+            endingMarketValue: 1000,
+        });
+
+        expect(result).toBeCloseTo(0.10517, 4);
+    });
+
+    it("does not include dividends paid after the valuation date", () => {
+        const resultWithFutureDividend = service.calculateXirr({
+            transactions: [
+                {
+                    type: "BUY",
+                    date: "2025-01-01",
+                    quantity: 10,
+                    price: 100,
+                },
+            ],
+            dividends: [
+                {
+                    paymentDate: "2026-06-01",
+                    amount: 100,
+                },
+            ],
+            valuationDate: "2026-01-01",
+            endingMarketValue: 1100,
+        });
+
+        const resultWithoutDividend = service.calculateXirr({
+            transactions: [
+                {
+                    type: "BUY",
+                    date: "2025-01-01",
+                    quantity: 10,
+                    price: 100,
+                },
+            ],
+            valuationDate: "2026-01-01",
+            endingMarketValue: 1100,
+        });
+
+        expect(resultWithFutureDividend).toBeCloseTo(
+            resultWithoutDividend,
+            10,
+        );
+    });
+
+    it("includes dividends paid on the valuation date", () => {
+        const resultWithDividend = service.calculateXirr({
+            transactions: [
+                {
+                    type: "BUY",
+                    date: "2025-01-01",
+                    quantity: 10,
+                    price: 100,
+                },
+            ],
+            dividends: [
+                {
+                    paymentDate: "2026-01-01",
+                    amount: 100,
+                },
+            ],
+            valuationDate: "2026-01-01",
+            endingMarketValue: 1100,
+        });
+
+        const resultWithoutDividend = service.calculateXirr({
+            transactions: [
+                {
+                    type: "BUY",
+                    date: "2025-01-01",
+                    quantity: 10,
+                    price: 100,
+                },
+            ],
+            valuationDate: "2026-01-01",
+            endingMarketValue: 1100,
+        });
+
+        expect(resultWithDividend).not.toBeCloseTo(
+            resultWithoutDividend,
+            6,
+        );
+    });
+
 });

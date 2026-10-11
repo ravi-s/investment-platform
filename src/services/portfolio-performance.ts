@@ -128,12 +128,15 @@ export class PortfolioPerformanceService {
 
         // Add dividends separately on their payment dates, preserving their
         // timing in the XIRR calculation instead of treating them as one total.
+        // Include only dividends paid on or before the valuation date.
         if (input.dividends) {
             input.dividends.forEach((dividend) => {
-                cashFlows.push({
-                    date: dividend.paymentDate,
-                    amount: dividend.amount,
-                });
+                if (dividend.paymentDate <= input.valuationDate) {
+                    cashFlows.push({
+                        date: dividend.paymentDate,
+                        amount: dividend.amount,
+                    });
+                }
             });
         }
 
