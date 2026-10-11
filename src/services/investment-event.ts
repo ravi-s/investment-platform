@@ -50,4 +50,27 @@ export class InvestmentEventService {
             amountPerUnit: event.amount_per_unit,
         });
     }
+
+    /**
+     * Returns dividend cash flows for the portfolio.
+     * The payment-date cutoff is applied by PortfolioPerformanceService.
+     */
+    getDividendCashFlows(portfolioId: number): Array<{
+        paymentDate: string;
+        amount: number;
+    }> {
+        return this.investmentEventRepository
+            .findDividendEventsByPortfolioId(portfolioId)
+            .map((event) => ({
+                paymentDate: event.payment_date,
+                amount: this.calculateDividendIncome({
+                    portfolioId,
+                    investmentEventId: event.id,
+                }),
+            }))
+            // A portfolio may have traded a security without holding it
+            // on the dividend's record date. Such an event pays nothing.
+            .filter((dividend) => dividend.amount > 0);
+    }
+
 }

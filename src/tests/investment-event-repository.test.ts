@@ -52,6 +52,97 @@ describe("InvestmentEventRepository", () => {
         expect(result?.currency).toBe("INR");
     });
 
+    it("finds dividend events for securities traded in a portfolio", () => {
+        const userId = Number(
+            testDb.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Portfolio User", "portfolio@example.com").lastInsertRowid
+        );
+        const portfolioId = Number(
+            testDb.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(userId, "Test Portfolio").lastInsertRowid
+        );
+        const otherSecurityId = Number(
+            testDb.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Tata Consultancy Services Limited").lastInsertRowid
+        );
+        const unrelatedSecurityId = Number(
+            testDb.prepare(`
+                INSERT INTO securities (name)
+                VALUES (?)
+            `).run("Infosys Limited").lastInsertRowid
+        );
+
+        repository.create(
+            otherSecurityId,
+            "DIVIDEND",
+            "2026-10-10",
+            "2026-10-11",
+            "2026-10-25",
+            20,
+            "INR"
+        );
+        repository.create(
+            unrelatedSecurityId,
+            "DIVIDEND",
+            "2026-11-10",
+            "2026-11-11",
+            "2026-11-25",
+            30,
+            "INR"
+        );
+
+        testDb.prepare(`
+            INSERT INTO transactions (
+                portfolio_id,
+                security_id,
+                type,
+                quantity,
+                price,
+                transaction_date
+            )
+            VALUES (?, ?, 'BUY', 10, 100, '2026-09-01')
+        `).run(portfolioId, 1);
+        testDb.prepare(`
+            INSERT INTO transactions (
+                portfolio_id,
+                security_id,
+                type,
+                quantity,
+                price,
+                transaction_date
+            )
+            VALUES (?, ?, 'BUY', 5, 110, '2026-09-03')
+        `).run(portfolioId, 1);
+        testDb.prepare(`
+            INSERT INTO transactions (
+                portfolio_id,
+                security_id,
+                type,
+                quantity,
+                price,
+                transaction_date
+            )
+            VALUES (?, ?, 'BUY', 5, 200, '2026-09-02')
+        `).run(portfolioId, otherSecurityId);
+
+        const events = repository.findDividendEventsByPortfolioId(portfolioId);
+
+        expect(events.map((event) => event.security_id)).toEqual([
+            1,
+            otherSecurityId,
+        ]);
+        expect(events.map((event) => event.event_type)).toEqual([
+            "DIVIDEND",
+            "DIVIDEND",
+        ]);
+    });
+
     it("rejects a non-positive dividend amount", () => {
         expect(() =>
             repository.create(

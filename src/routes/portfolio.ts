@@ -7,6 +7,10 @@ import { DateOnlySchema } from "../schema/date.ts";
 import { TransactionService } from "../services/transaction.js";
 import { PortfolioPerformanceService } from "../services/portfolio-performance.js";
 
+import { InvestmentEventRepository } from "../repositories/investment-event.js";
+import { InvestmentEventService } from "../services/investment-event.js";
+import { DividendService } from "../services/dividend.js";
+
 const CreatePortfolioSchema = z.object({
     userId: z.number().int().positive(),
     name: z.string().min(1),
@@ -22,9 +26,10 @@ const PortfolioValuationQuerySchema = z.object({
 });
 
 type PortfolioRouteOptions = {
-    service?: PortfolioService;
+    portfolioService?: PortfolioService;
     transactionService?: TransactionService;
     performanceService?: PortfolioPerformanceService;
+    investmentEventService?: InvestmentEventService;
 };
 
 export async function portfolioRoutes(
@@ -32,13 +37,22 @@ export async function portfolioRoutes(
     options: PortfolioRouteOptions = {}
 ) {
     const portfolioService =
-        options.service ?? new PortfolioService(db);
+        options.portfolioService ?? new PortfolioService(db);
 
     const transactionService =
         options.transactionService ?? new TransactionService(db);
 
     const performanceService =
         options.performanceService ?? new PortfolioPerformanceService();
+
+    const investmentEventService =
+        options.investmentEventService ??
+        new InvestmentEventService(
+            new InvestmentEventRepository(db),
+            transactionService,
+            new DividendService(),
+        );
+
 
     app.post("/api/portfolios", async (request, reply) => {
         const result = CreatePortfolioSchema.safeParse(request.body);
@@ -232,6 +246,10 @@ export async function portfolioRoutes(
                     date,
                     exchange
                 );
+                const dividends =
+                    investmentEventService.getDividendCashFlows(portfolioId);
+
+                console.log("Dividend cash flows:", dividends);
 
                 const xirr = performanceService.calculateXirr({
                     transactions: transactions.map((transaction) => ({
@@ -250,6 +268,7 @@ export async function portfolioRoutes(
                             split_denominator: transaction.split_denominator,
                         }),
                     })),
+                    dividends,
                     valuationDate: date,
                     endingMarketValue: valuation.total_market_value,
                 });

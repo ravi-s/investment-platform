@@ -2,6 +2,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MarketPriceService } from "../services/market-price.js";
+import { InvestmentEventService } from "../services/investment-event.js";
+import { InvestmentEventRepository } from "../repositories/investment-event.js";
+import { DividendService } from "../services/dividend.js";
 
 import { portfolioRoutes } from "../routes/portfolio.js";
 import { runMigrations } from "../db/migration-runner.ts";
@@ -11,7 +14,7 @@ import { TransactionService } from "../services/transaction.ts";
 describe("Portfolio routes", () => {
     let app: FastifyInstance;
     let db: Database.Database;
-    let service: PortfolioService;
+    let portfolioService: PortfolioService;
     let transactionService: TransactionService;
     let marketPriceService: MarketPriceService;
 
@@ -66,12 +69,22 @@ describe("Portfolio routes", () => {
             2650
         );
 
-        service = new PortfolioService(db);
+        portfolioService = new PortfolioService(db);
+
+        const investmentEventService = new InvestmentEventService(
+            new InvestmentEventRepository(db),
+            transactionService,
+            new DividendService(),
+        );
 
 
         app = Fastify();
 
-        await app.register(portfolioRoutes, { service, transactionService, marketPriceService });
+        await app.register(portfolioRoutes, {
+            portfolioService,
+            transactionService,
+            investmentEventService,
+        });
     });
 
     afterAll(async () => {
@@ -90,14 +103,14 @@ describe("Portfolio routes", () => {
 
     it("returns portfolio valuation as of a date", async () => {
 
-
-
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
         });
 
         expect(response.statusCode).toBe(200);
+
+
 
         expect(response.json()).toEqual({
             portfolio_id: portfolioId,
@@ -268,6 +281,8 @@ describe("Portfolio routes", () => {
 
         expect(response.statusCode).toBe(200);
 
+
+
         const body = response.json();
 
         expect(body).toMatchObject({
@@ -387,6 +402,67 @@ describe("Portfolio routes", () => {
         // The original investment grows from ₹250,000 to ₹265,000
         // over exactly 365 days: a 6% annualized return.
         expect(body.xirr).toBeCloseTo(0.06, 6);
+    });
+
+    it("includes eligible dividend income in portfolio performance", async () => {
+        const testPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (1, ?)
+        `).run("Portfolio Dividend XIRR Test").lastInsertRowid
+        );
+
+        // Invest ₹250,000 on September 23, 2025; value the shares one year later.
+        transactionService.create(
+            testPortfolioId,
+            securityId,
+            "BUY",
+            100,
+            2500,
+            "2025-09-23"
+        );
+
+        // Shares are held before the September 22, 2026 dividend record date.
+        // The dividend is paid on the valuation date.
+        db.prepare(`
+        INSERT INTO investment_events (
+            security_id,
+            event_type,
+            ex_date,
+            record_date,
+            payment_date,
+            amount_per_unit,
+            currency
+        )
+        VALUES (?, 'DIVIDEND', ?, ?, ?, ?, ?)
+    `).run(
+            securityId,
+            "2026-09-21",
+            "2026-09-22",
+            "2026-09-23",
+            10,
+            "INR"
+        );
+
+
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        // Cash flows:
+        // 2025-09-23: -250,000 (BUY 100 shares)
+        // 2026-09-23: +265,000 (ending market value)
+        // 2026-09-23: +1,000 (100 shares × ₹10 dividend)
+        const expectedXirr = 266000 / 250000 - 1;
+
+        expect(body.ending_market_value).toBe(265000);
+        expect(body.xirr).toBeCloseTo(expectedXirr, 6);
     });
 
 });
