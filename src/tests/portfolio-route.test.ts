@@ -465,4 +465,22 @@ describe("Portfolio routes", () => {
         expect(body.xirr).toBeCloseTo(expectedXirr, 6);
     });
 
+    it("rejects unauthenticated access to a portfolio", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}`,
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+    it("rejects unauthenticated access to portfolio valuation", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
 });
