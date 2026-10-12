@@ -22,8 +22,15 @@ export class XirrService {
         let largestAmount = 0;
 
         const flows = cashFlows.map((cashFlow) => {
-            const date = new Date(cashFlow.date).getTime();
+            const parsedDate = new Date(cashFlow.date);
+            const date = parsedDate.getTime();
 
+            if (
+                !Number.isFinite(date) ||
+                parsedDate.toISOString().slice(0, 10) !== cashFlow.date
+            ) {
+                throw new Error("XIRR cash flows require valid dates and amounts");
+            }
             if (!Number.isFinite(date) || !Number.isFinite(cashFlow.amount)) {
                 throw new Error("XIRR cash flows require valid dates and amounts");
             }
@@ -72,7 +79,7 @@ export class XirrService {
                 (total, term) =>
                     total +
                     term.amount *
-                        Math.exp(term.exponent - largestExponent),
+                    Math.exp(term.exponent - largestExponent),
                 0
             );
 

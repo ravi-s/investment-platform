@@ -300,5 +300,22 @@ describe("XirrService", () => {
     });
 
 
+    it("rejects impossible calendar dates", () => {
+        const service = new XirrService();
+
+        expect(() =>
+            service.calculate([
+                {
+                    date: "2026-02-30",
+                    amount: -100000,
+                },
+                {
+                    date: "2027-01-01",
+                    amount: 110000,
+                },
+            ]),
+        ).toThrow("XIRR cash flows require valid dates and amounts");
+    });
+
 
 });
