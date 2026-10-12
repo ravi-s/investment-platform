@@ -21,4 +21,14 @@ export class UserRepository {
             `)
             .get(id);
     }
+
+    findByEmail(email: string) {
+        return db
+            .prepare(`
+            SELECT id, name, email
+            FROM users
+            WHERE email = ?
+        `)
+            .get(email);
+    }
 }
