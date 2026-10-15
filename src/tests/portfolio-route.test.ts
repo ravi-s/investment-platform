@@ -11,12 +11,17 @@ import { runMigrations } from "../db/migration-runner.ts";
 import { PortfolioService } from "../services/portfolio.js";
 import { TransactionService } from "../services/transaction.ts";
 
+import cookie from "@fastify/cookie";
+import { SessionService } from "../services/session.js";
+import { SessionRepository } from "../repositories/session.js";
+
 describe("Portfolio routes", () => {
     let app: FastifyInstance;
     let db: Database.Database;
     let portfolioService: PortfolioService;
     let transactionService: TransactionService;
     let marketPriceService: MarketPriceService;
+    let sessionService: SessionService;
 
     let portfolioId: number;
     let securityId: number;
@@ -53,6 +58,9 @@ describe("Portfolio routes", () => {
         );
         transactionService = new TransactionService(db);
         marketPriceService = new MarketPriceService(db);
+        sessionService = new SessionService(
+            new SessionRepository(db),
+        );
 
         transactionService.create(
             portfolioId,
@@ -80,12 +88,20 @@ describe("Portfolio routes", () => {
 
         app = Fastify();
 
+        await app.register(cookie);
+
         await app.register(portfolioRoutes, {
             portfolioService,
             transactionService,
             investmentEventService,
+            sessionService,
         });
     });
+
+    async function authenticatedCookie(userId = 1): Promise<string> {
+        const session = sessionService.createSession(userId);
+        return `session=${session.token}`;
+    }
 
     afterAll(async () => {
         await app.close();
@@ -96,6 +112,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-02-31&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(400);
@@ -106,6 +125,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -128,10 +150,14 @@ describe("Portfolio routes", () => {
             total_market_value: 265000,
         });
     });
+
     it("returns 422 when historical price is unavailable", async () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-24&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(422);
@@ -145,6 +171,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-21&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -175,6 +204,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -223,6 +255,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         // Assert
@@ -277,6 +312,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -340,6 +378,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-24&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -389,6 +430,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
@@ -449,6 +493,9 @@ describe("Portfolio routes", () => {
         const response = await app.inject({
             method: "GET",
             url: `/api/portfolios/${testPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
         });
 
         expect(response.statusCode).toBe(200);
