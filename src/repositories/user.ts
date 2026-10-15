@@ -29,6 +29,6 @@ export class UserRepository {
             FROM users
             WHERE email = ?
         `)
-            .get(email);
+            .get(email) as { id: number; name: string; email: string } | undefined;
     }
 }
