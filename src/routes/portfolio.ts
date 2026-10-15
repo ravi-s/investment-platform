@@ -11,6 +11,9 @@ import { InvestmentEventRepository } from "../repositories/investment-event.js";
 import { InvestmentEventService } from "../services/investment-event.js";
 import { DividendService } from "../services/dividend.js";
 
+import { SessionService } from "../services/session.js";
+import { authenticationGuard } from "./authentication-guard.js";
+
 const CreatePortfolioSchema = z.object({
     userId: z.number().int().positive(),
     name: z.string().min(1),
@@ -30,6 +33,7 @@ type PortfolioRouteOptions = {
     transactionService?: TransactionService;
     performanceService?: PortfolioPerformanceService;
     investmentEventService?: InvestmentEventService;
+    sessionService?: SessionService;
 };
 
 export async function portfolioRoutes(
@@ -53,7 +57,15 @@ export async function portfolioRoutes(
             new DividendService(),
         );
 
+    if (!options.sessionService) {
+        throw new Error(
+            "SessionService is required for portfolio routes",
+        );
+    }
 
+    const requireAuthentication = authenticationGuard(
+        options.sessionService,
+    );
     app.post("/api/portfolios", async (request, reply) => {
         const result = CreatePortfolioSchema.safeParse(request.body);
 
@@ -80,19 +92,21 @@ export async function portfolioRoutes(
             .send(portfolio);
     });
 
-    app.get("/api/portfolios/:id", async (request, reply) => {
-        const { id } = request.params as { id: string };
+    app.get("/api/portfolios/:id",
+        { preHandler: requireAuthentication },
+        async (request, reply) => {
+            const { id } = request.params as { id: string };
 
-        const portfolio = portfolioService.getPortfolio(Number(id));
+            const portfolio = portfolioService.getPortfolio(Number(id));
 
-        if (!portfolio) {
-            return reply.code(404).send({
-                error: "Portfolio not found",
-            });
-        }
+            if (!portfolio) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
+                });
+            }
 
-        return portfolio;
-    });
+            return portfolio;
+        });
 
     app.get(
         "/api/portfolios/:id/holdings",
@@ -149,6 +163,7 @@ export async function portfolioRoutes(
 
     app.get(
         "/api/portfolios/:id/valuation",
+        { preHandler: requireAuthentication },
         async (request, reply) => {
             const { id } = request.params as { id: string };
 
