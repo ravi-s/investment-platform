@@ -14,11 +14,14 @@ import { DividendService } from "../services/dividend.js";
 import { SessionService } from "../services/session.js";
 import { authenticationGuard } from "./authentication-guard.js";
 
+// Validate client-supplied portfolio fields before calling the service.
+// Ownership is always taken from the authenticated session, not this payload.
 const CreatePortfolioSchema = z.object({
     userId: z.number().int().positive(),
     name: z.string().min(1),
 });
 
+// Shared date validation keeps historical portfolio queries consistent.
 const PortfolioHistoryQuerySchema = z.object({
     date: DateOnlySchema,
 });
@@ -40,6 +43,8 @@ export async function portfolioRoutes(
     app: FastifyInstance,
     options: PortfolioRouteOptions = {}
 ) {
+    // Allow services to be injected (for example, in tests) while providing
+    // the standard database-backed implementations for normal application use.
     const portfolioService =
         options.portfolioService ?? new PortfolioService(db);
 
@@ -57,6 +62,8 @@ export async function portfolioRoutes(
             new DividendService(),
         );
 
+    // Routes must not be registered without a session service: every endpoint
+    // below relies on the authentication guard to establish the user's identity.
     if (!options.sessionService) {
         throw new Error(
             "SessionService is required for portfolio routes",
@@ -67,6 +74,7 @@ export async function portfolioRoutes(
         options.sessionService,
     );
 
+    // Create a portfolio for the signed-in user; never trust a user ID from the body.
     app.post("/api/portfolios",
         { preHandler: requireAuthentication },
         async (request, reply) => {
@@ -103,6 +111,7 @@ export async function portfolioRoutes(
                 .send(portfolio);
         });
 
+    // Verify ownership before returning portfolio data, including nested resources.
     app.get("/api/portfolios/:id",
         { preHandler: requireAuthentication },
         async (request, reply) => {
@@ -122,6 +131,7 @@ export async function portfolioRoutes(
             return portfolio;
         });
 
+    // Return current holdings only after confirming the portfolio belongs to the caller.
     app.get(
         "/api/portfolios/:id/holdings",
         { preHandler: requireAuthentication },
@@ -143,6 +153,7 @@ export async function portfolioRoutes(
         }
     );
 
+    // Reconstruct holdings at a validated date; ownership checks match the live holdings route.
     app.get(
         "/api/portfolios/:id/holdings/as-of",
         { preHandler: requireAuthentication },
@@ -183,6 +194,7 @@ export async function portfolioRoutes(
         }
     );
 
+    // Calculate portfolio market value for a date and exchange; missing historical prices are unprocessable.
     app.get(
         "/api/portfolios/:id/valuation",
         { preHandler: requireAuthentication },
@@ -240,6 +252,7 @@ export async function portfolioRoutes(
         }
     );
 
+    // Calculate annualized return from dated transactions, dividend cash flows, and ending market value.
     app.get(
         "/api/portfolios/:id/performance",
         { preHandler: requireAuthentication },
@@ -269,6 +282,8 @@ export async function portfolioRoutes(
             }
 
             try {
+                // Build dated cash flows from transactions and dividends, then
+                // calculate XIRR against the portfolio's market value on the requested date.
                 const transactions = transactionService.findByPortfolioId(
                     portfolioId,
                     undefined,
