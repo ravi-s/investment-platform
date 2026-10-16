@@ -66,31 +66,42 @@ export async function portfolioRoutes(
     const requireAuthentication = authenticationGuard(
         options.sessionService,
     );
-    app.post("/api/portfolios", async (request, reply) => {
-        const result = CreatePortfolioSchema.safeParse(request.body);
 
-        if (!result.success) {
-            return reply.code(400).send({
-                error: "Invalid portfolio data",
-                details: result.error,
-            });
-        }
+    app.post("/api/portfolios",
+        { preHandler: requireAuthentication },
+        async (request, reply) => {
+            const result = CreatePortfolioSchema.safeParse(request.body);
 
-        const portfolio = portfolioService.createPortfolio(
-            result.data.userId,
-            result.data.name
-        );
+            if (!result.success) {
+                return reply.code(400).send({
+                    error: "Invalid portfolio data",
+                    details: result.error,
+                });
+            }
 
-        if (!portfolio) {
-            return reply.code(404).send({
-                error: "User not found",
-            });
-        }
+            const userId = request.authenticatedUserId;
 
-        return reply
-            .code(201)
-            .send(portfolio);
-    });
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            const portfolio = portfolioService.createPortfolio(
+                userId,
+                result.data.name,
+            );
+
+            if (!portfolio) {
+                return reply.code(404).send({
+                    error: "User not found",
+                });
+            }
+
+            return reply
+                .code(201)
+                .send(portfolio);
+        });
 
     app.get("/api/portfolios/:id",
         { preHandler: requireAuthentication },
@@ -113,12 +124,16 @@ export async function portfolioRoutes(
 
     app.get(
         "/api/portfolios/:id/holdings",
+        { preHandler: requireAuthentication },
         async (request, reply) => {
             const { id } = request.params as { id: string };
 
             const portfolio = portfolioService.getPortfolio(Number(id));
 
-            if (!portfolio) {
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
                 return reply.code(404).send({
                     error: "Portfolio not found",
                 });
@@ -130,6 +145,7 @@ export async function portfolioRoutes(
 
     app.get(
         "/api/portfolios/:id/holdings/as-of",
+        { preHandler: requireAuthentication },
         async (request, reply) => {
             const { id } = request.params as { id: string };
 
@@ -151,7 +167,10 @@ export async function portfolioRoutes(
                 Number(id)
             );
 
-            if (!portfolio) {
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
                 return reply.code(404).send({
                     error: "Portfolio not found",
                 });
@@ -186,7 +205,10 @@ export async function portfolioRoutes(
                 Number(id)
             );
 
-            if (!portfolio) {
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
                 return reply.code(404).send({
                     error: "Portfolio not found",
                 });
@@ -220,6 +242,7 @@ export async function portfolioRoutes(
 
     app.get(
         "/api/portfolios/:id/performance",
+        { preHandler: requireAuthentication },
         async (request, reply) => {
             const { id } = request.params as { id: string };
 
@@ -239,7 +262,7 @@ export async function portfolioRoutes(
 
             const portfolio = portfolioService.getPortfolio(portfolioId);
 
-            if (!portfolio) {
+            if (!portfolio || portfolio.user_id !== request.authenticatedUserId) {
                 return reply.code(404).send({
                     error: "Portfolio not found",
                 });
@@ -325,5 +348,7 @@ export async function portfolioRoutes(
             }
         }
     );
+
+
 
 }

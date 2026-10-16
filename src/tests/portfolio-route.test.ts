@@ -585,4 +585,165 @@ describe("Portfolio routes", () => {
 
         expect(response.statusCode).toBe(404);
     });
+
+
+    it("rejects unauthenticated access to portfolio holdings", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios/1/holdings",
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+    it("does not allow an authenticated user to retrieve another user's holdings", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("tester1", "tester1@example.com").lastInsertRowid
+        );
+
+        const otherPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(otherUserId, "Tester 1's Portfolio").lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${otherPortfolioId}/holdings`,
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("rejects unauthenticated access to historical portfolio holdings", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios/1/holdings/as-of?date=2026-09-23&exchange=NSE",
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+
+    it("does not allow an authenticated user to retrieve another user's historical holdings", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Tester 2 ", "tester2r@example.com").lastInsertRowid
+        );
+
+        const otherPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(otherUserId, "Tester 2's Portfolio").lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${otherPortfolioId}/holdings/as-of?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("rejects unauthenticated access to  portfolio performance", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios/1/performance",
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+
+    it("does not allow an authenticated user to retrieve another user's performance", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("tester4", "tester4@example.com").lastInsertRowid
+        );
+
+        const otherPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(otherUserId, "Tester 4's Portfolio").lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${otherPortfolioId}/performance?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("rejects unauthenticated portfolio creation", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            payload: {
+                userId: 1,
+                name: "Unauthenticated Portfolio",
+            },
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+
+    it("creates a portfolio under the authenticated user's identity", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("tester5", "tester5@example.com").lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+            payload: {
+                userId: otherUserId,
+                name: "tester5 Test Portfolio",
+            },
+        });
+
+
+        expect(response.statusCode).toBe(201);
+
+
+        const createdPortfolio = db.prepare(`
+        SELECT user_id, name
+        FROM portfolios
+        WHERE name = ?
+    `).get("tester5 Test Portfolio") as {
+            user_id: number;
+            name: string;
+        };
+
+        expect(createdPortfolio.user_id).toBe(1);
+        expect(createdPortfolio.name).toBe("tester5 Test Portfolio");
+    });
+
+
 });
