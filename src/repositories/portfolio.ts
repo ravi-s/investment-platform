@@ -13,14 +13,14 @@ export class PortfolioRepository {
         return this.findById(Number(result.lastInsertRowid));
     }
 
-    findById(id: number) {
+    findById(id: number): { id: number; user_id: number; name: string } | undefined {
         return this.db
             .prepare(`
                 SELECT id, user_id, name
                 FROM portfolios
                 WHERE id = ?
             `)
-            .get(id);
+            .get(id) as { id: number; user_id: number; name: string } | undefined;
     }
 
     findHoldings(portfolioId: number) {

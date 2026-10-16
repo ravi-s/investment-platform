@@ -99,7 +99,10 @@ export async function portfolioRoutes(
 
             const portfolio = portfolioService.getPortfolio(Number(id));
 
-            if (!portfolio) {
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
                 return reply.code(404).send({
                     error: "Portfolio not found",
                 });

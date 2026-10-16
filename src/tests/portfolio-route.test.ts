@@ -530,4 +530,59 @@ describe("Portfolio routes", () => {
         expect(response.statusCode).toBe(401);
     });
 
+
+    it("does not allow a user to retrieve another user's portfolio", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("Another User", "another-user@example.com").lastInsertRowid
+        );
+
+        const otherPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(otherUserId, "Another User's Portfolio").lastInsertRowid
+        );
+
+        // User 1 attempts to access a portfolio owned by user 2.
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${otherPortfolioId}`,
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("does not allow an authenticated user to retrieve another user's financial valuation.", async () => {
+
+        const otherUserId = Number(
+            db.prepare(`
+            INSERT INTO users (name, email)
+            VALUES (?, ?)
+        `).run("test User", "test-user@example.com").lastInsertRowid
+        );
+
+        const otherPortfolioId = Number(
+            db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(otherUserId, "Another User's Portfolio").lastInsertRowid
+        );
+
+        // User 1 attempts to access a portfolio owned by user 2.
+        const response = await app.inject({
+            method: "GET",
+            url: `/api/portfolios/${otherPortfolioId}/valuation?date=2026-09-23&exchange=NSE`,
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
 });
