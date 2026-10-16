@@ -264,7 +264,6 @@ export async function portfolioRoutes(
                 const dividends =
                     investmentEventService.getDividendCashFlows(portfolioId);
 
-                console.log("Dividend cash flows:", dividends);
 
                 const xirr = performanceService.calculateXirr({
                     transactions: transactions.map((transaction) => ({
