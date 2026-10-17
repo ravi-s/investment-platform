@@ -179,6 +179,10 @@ export class TransactionService {
         );
     }
 
+    findPortfolioById(portfolioId: number) {
+        return this.portfolioRepository.findById(portfolioId);
+    }
+
     /** Reconstructs the quantity of a security held through the specified date. */
     getHoldingAsOf(
         portfolioId: number,

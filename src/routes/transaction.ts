@@ -69,6 +69,21 @@ export async function transactionRoutes(
             });
         }
 
+        const portfolio = service.findPortfolioById(
+            result.data.portfolioId
+        );
+
+        if (
+            !portfolio ||
+            portfolio.user_id !== request.authenticatedUserId
+        ) {
+            return reply.code(404).send({
+                error: "Portfolio not found",
+            });
+        }
+
+
+
         try {
             let transaction;
 
@@ -163,6 +178,16 @@ export async function transactionRoutes(
                 return reply.code(400).send({
                     error: "Invalid query parameters",
                     details: result.error,
+                });
+            }
+            const portfolio = service.findPortfolioById(Number(portfolioId));
+
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
                 });
             }
 
