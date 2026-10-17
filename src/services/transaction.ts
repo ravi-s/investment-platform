@@ -156,6 +156,9 @@ export class TransactionService {
         return this.transactionRepository.findById(id);
     }
 
+    findByIdWithOwner(id: number) {
+        return this.transactionRepository.findByIdWithOwner(id);
+    }
     /**
      * Returns a portfolio's transactions, optionally limited to a date range.
      * Throws when both bounds are supplied and the start is after the end.

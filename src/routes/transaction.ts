@@ -1,6 +1,8 @@
 import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { TransactionService } from "../services/transaction.js";
+import type { SessionService } from "../services/session.js";
+import { authenticationGuard } from "./authentication-guard.js";
 
 const CreateTransactionSchema = z.discriminatedUnion("type", [
     z.object({
@@ -48,9 +50,14 @@ const AsOfQuerySchema = z.object({
 
 export async function transactionRoutes(
     app: FastifyInstance,
-    options: { service: TransactionService }
+    options: {
+        service: TransactionService;
+        sessionService: SessionService;
+    }
 ) {
-    const { service } = options;
+    const { service, sessionService } = options;
+    const requireAuthentication = authenticationGuard(sessionService);
+    app.addHook("preHandler", requireAuthentication);
 
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
@@ -128,15 +135,19 @@ export async function transactionRoutes(
     app.get("/api/transactions/:id", async (request, reply) => {
         const { id } = request.params as { id: string };
 
-        const transaction = service.findById(Number(id));
+        const transaction = service.findByIdWithOwner(Number(id));
 
-        if (!transaction) {
+        if (
+            !transaction ||
+            transaction.user_id !== request.authenticatedUserId
+        ) {
             return reply.code(404).send({
                 error: "Transaction not found",
             });
         }
 
-        return transaction;
+        const { user_id: _userId, ...result } = transaction;
+        return result;
     });
 
     app.get(

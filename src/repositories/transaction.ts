@@ -25,6 +25,40 @@ export class TransactionRepository {
             .get(id);
     }
 
+    /** Retrieves a transaction by ID, including the ID of its owning user. */
+    findByIdWithOwner(id: number) {
+        return this.db
+            .prepare(`
+            SELECT
+                t.id,
+                t.portfolio_id,
+                t.security_id,
+                t.type,
+                t.quantity,
+                t.price,
+                t.split_numerator,
+                t.split_denominator,
+                t.transaction_date,
+                p.user_id
+            FROM transactions t
+            JOIN portfolios p ON p.id = t.portfolio_id
+            WHERE t.id = ?
+        `)
+            .get(id) as
+            | {
+                id: number;
+                portfolio_id: number;
+                security_id: number;
+                type: string;
+                quantity: number | null;
+                price: number | null;
+                split_numerator: number | null;
+                split_denominator: number | null;
+                transaction_date: string;
+                user_id: number;
+            }
+            | undefined;
+    }
     /**
      * Lists a portfolio's transactions within optional inclusive date bounds.
      * Results are ordered newest first, with IDs providing a stable tie-breaker.

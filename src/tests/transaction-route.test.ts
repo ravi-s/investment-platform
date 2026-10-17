@@ -5,11 +5,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { transactionRoutes } from "../routes/transaction.js";
 import { runMigrations } from "../db/migration-runner.ts";
 import { TransactionService } from "../services/transaction.js";
+import { SessionService } from "../services/session.js";
+import { SessionRepository } from "../repositories/session.js";
+import cookie from "@fastify/cookie";
 
 describe("Transaction routes", () => {
     let app: FastifyInstance;
     let db: Database.Database;
     let service: TransactionService;
+    let sessionService: SessionService;
     let portfolioId: number;
     let securityId: number;
 
@@ -39,11 +43,33 @@ describe("Transaction routes", () => {
         );
 
         service = new TransactionService(db);
+        sessionService = new SessionService(
+            new SessionRepository(db),
+        );
 
         app = Fastify();
 
-        await app.register(transactionRoutes, { service });
+        await app.register(cookie);
+        await app.register(transactionRoutes, { service, sessionService });
     });
+
+    async function authenticatedCookie(userId = 1): Promise<string> {
+        const session = sessionService.createSession(userId);
+        return `session=${session.token}`;
+    }
+
+    async function injectAuthenticated(options: {
+        method: "GET" | "POST";
+        url: string;
+        payload?: Record<string, unknown>;
+    }, userId = 1) {
+        return app.inject({
+            ...options,
+            headers: {
+                cookie: await authenticatedCookie(userId),
+            },
+        });
+    }
 
     afterAll(async () => {
         await app.close();
@@ -51,7 +77,7 @@ describe("Transaction routes", () => {
     });
 
     it("creates a BUY transaction through the API", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -77,7 +103,7 @@ describe("Transaction routes", () => {
     });
 
     it("creates a SPLIT transaction through the API", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -112,7 +138,7 @@ describe("Transaction routes", () => {
                     ? { splitNumerator: 2, splitDenominator: 1 }
                     : { quantity: 1, price: 100 };
 
-            const response = await app.inject({
+            const response = await injectAuthenticated({
                 method: "POST",
                 url: "/api/transactions",
                 payload: {
@@ -139,7 +165,7 @@ describe("Transaction routes", () => {
                     ? { splitNumerator: 2, splitDenominator: 1 }
                     : { quantity: 1, price: 100 };
 
-            const response = await app.inject({
+            const response = await injectAuthenticated({
                 method: "POST",
                 url: "/api/transactions",
                 payload: {
@@ -164,7 +190,7 @@ describe("Transaction routes", () => {
             "2026-09-30"
         ) as { id: number };
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/transactions/${split.id}`,
         });
@@ -184,8 +210,55 @@ describe("Transaction routes", () => {
         });
     });
 
-    it("returns 404 when retrieving a transaction that does not exist", async () => {
+
+    it("rejects unauthenticated access to a transaction by ID", async () => {
+        const transaction = service.createSplit(
+            portfolioId,
+            securityId,
+            2,
+            1,
+            "2026-09-30"
+        ) as { id: number };
+
         const response = await app.inject({
+            method: "GET",
+            url: `/api/transactions/${transaction.id}`,
+        });
+
+        expect(response.statusCode).toBe(401);
+    });
+
+    it("prevents one user from retrieving another user's transaction", async () => {
+        const transaction = service.createSplit(
+            portfolioId,
+            securityId,
+            2,
+            1,
+            "2026-09-30"
+        ) as { id: number };
+
+        // Create a second user.
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other User", "other@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/transactions/${transaction.id}`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+    });
+
+
+    it("returns 404 when retrieving a transaction that does not exist", async () => {
+        const response = await injectAuthenticated({
             method: "GET",
             url: "/api/transactions/999999",
         });
@@ -197,7 +270,7 @@ describe("Transaction routes", () => {
         });
     });
     it("rejects a SPLIT with an invalid numerator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -214,7 +287,7 @@ describe("Transaction routes", () => {
     });
 
     it("rejects a SPLIT with an invalid denominator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -231,7 +304,7 @@ describe("Transaction routes", () => {
     });
 
     it("rejects a SPLIT with a non-integer numerator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -247,7 +320,7 @@ describe("Transaction routes", () => {
         expect(response.statusCode).toBe(400);
     });
     it("rejects a SPLIT with a non-integer denominator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -263,7 +336,7 @@ describe("Transaction routes", () => {
         expect(response.statusCode).toBe(400);
     });
     it("rejects a SPLIT without a numerator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -279,7 +352,7 @@ describe("Transaction routes", () => {
     });
 
     it("rejects a SPLIT without a denominator", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -304,7 +377,7 @@ describe("Transaction routes", () => {
             "2026-09-29"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -346,7 +419,7 @@ describe("Transaction routes", () => {
             "2026-09-29"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "POST",
             url: "/api/transactions",
             payload: {
@@ -367,7 +440,7 @@ describe("Transaction routes", () => {
     });
 
     it("returns transactions for a portfolio", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/transactions`,
         });
@@ -404,7 +477,7 @@ describe("Transaction routes", () => {
             "2026-10-05"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/transactions?from=2026-10-02&to=2026-10-05`,
         });
@@ -431,7 +504,7 @@ describe("Transaction routes", () => {
     });
 
     it("rejects an invalid transaction date range", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/transactions?from=2026-10-10&to=2026-10-05`,
         });
@@ -453,7 +526,7 @@ describe("Transaction routes", () => {
             "2026-10-01"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions`,
         });
@@ -493,7 +566,7 @@ describe("Transaction routes", () => {
             "2026-10-05"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions?from=2026-10-02&to=2026-10-05`,
         });
@@ -520,7 +593,7 @@ describe("Transaction routes", () => {
     });
 
     it("rejects an invalid security transaction date range", async () => {
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions?from=2026-10-10&to=2026-10-05`,
         });
@@ -557,7 +630,7 @@ describe("Transaction routes", () => {
             "2026-10-05"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${isolatedPortfolioId}/securities/${securityId}/holding?asOf=2026-10-03`,
         });
@@ -607,7 +680,7 @@ describe("Transaction routes", () => {
             "2026-10-08"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${isolatedPortfolioId}/securities/${securityId}/holding/change?from=2026-10-02&to=2026-10-08`,
         });
@@ -655,7 +728,7 @@ describe("Transaction routes", () => {
             "2026-10-05"
         );
 
-        const response = await app.inject({
+        const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${isolatedPortfolioId}/securities?asOf=2026-10-03`,
         });

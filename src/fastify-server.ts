@@ -40,15 +40,16 @@ const authenticationService = new AuthenticationService(
 
 const sessionService = new SessionService(sessionRepository);
 
+await app.register(cookie);
+
 await app.register(securityRoutes);
 await app.register(userRoutes);
 await app.register(portfolioRoutes);
 await app.register(holdingRoutes);
 await app.register(transactionRoutes, {
     service: new TransactionService(db),
+    sessionService,
 });
-
-await app.register(cookie);
 
 // Register authentication routes after the cookie plugin.
 await app.register(authenticationRoutes, {
