@@ -796,6 +796,93 @@ describe("Transaction routes", () => {
         });
     });
 
+    it("prevents a user from retrieving another user's portfolio holding", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Holding User", "other-holding@example.com");
 
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/portfolios/${portfolioId}/securities/${securityId}/holding?asOf=2026-10-01`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Portfolio not found",
+        });
+    });
+
+    it("prevents a user from retrieving another user's portfolio holding changes between 2 dates", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Holding User 2", "other-holding2@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/portfolios/${portfolioId}/securities/${securityId}/holding/change?from=2026-09-01&to=2026-09-30`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Portfolio not found",
+        });
+    });
+
+    // Additional tests for other routes can be added here
+    it("prevents a user from retrieving another user's portfolio security transactions", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Transactions User", "other-transactions@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/portfolios/${portfolioId}/securities/${securityId}/transactions`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Portfolio not found",
+        });
+    });
+    //GET /api/portfolios/:portfolioId/securities?asOf=2026-10-01
+    it("prevents a user from retrieving another user's portfolio securities as of a specific date", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Securities User", "other-securities@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/portfolios/${portfolioId}/securities?asOf=2026-10-01`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Portfolio not found",
+        });
+    });
 
 });
