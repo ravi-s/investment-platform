@@ -21,6 +21,7 @@ import { TransactionService } from "./services/transaction.js";
 import { authenticationRoutes } from "./routes/authentication.ts";
 import { AuthenticationService } from "./services/authentication.js";
 import { SessionService } from "./services/session.js";
+import { UserService } from "./services/user.ts";
 
 const app = Fastify({
     logger: true,
@@ -44,9 +45,13 @@ const sessionService = new SessionService(sessionRepository);
 await app.register(cookie);
 
 await app.register(securityRoutes);
-await app.register(userRoutes);
-await app.register(portfolioRoutes);
-
+await app.register(userRoutes, {
+    service: new UserService(db),
+    sessionService,
+});
+await app.register(portfolioRoutes, {
+    sessionService,
+});
 await app.register(holdingRoutes, {
     service: new HoldingService(db),
     sessionService,

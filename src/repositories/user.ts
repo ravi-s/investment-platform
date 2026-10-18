@@ -1,8 +1,13 @@
+
+import type Database from "better-sqlite3";
+
 import db from "../db/database.js";
 
 export class UserRepository {
+    constructor(private readonly database: Database.Database = db) { }
+
     create(name: string, email: string) {
-        const result = db
+        const result = this.database
             .prepare(`
                 INSERT INTO users (name, email)
                 VALUES (?, ?)
@@ -13,22 +18,26 @@ export class UserRepository {
     }
 
     findById(id: number) {
-        return db
+        return this.database
             .prepare(`
                 SELECT id, name, email
                 FROM users
                 WHERE id = ?
             `)
-            .get(id);
+            .get(id) as
+            | { id: number; name: string; email: string }
+            | undefined;
     }
 
     findByEmail(email: string) {
-        return db
+        return this.database
             .prepare(`
-            SELECT id, name, email
-            FROM users
-            WHERE email = ?
-        `)
-            .get(email) as { id: number; name: string; email: string } | undefined;
+                SELECT id, name, email
+                FROM users
+                WHERE email = ?
+            `)
+            .get(email) as
+            | { id: number; name: string; email: string }
+            | undefined;
     }
 }
