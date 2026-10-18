@@ -1,13 +1,19 @@
+import type Database from "better-sqlite3";
 import { SecurityRepository } from "../repositories/security.js";
 import db from "../db/database.js";
-const repository = new SecurityRepository(db);
 
 export class SecurityService {
+    private readonly repository: SecurityRepository;
+
+    constructor(database: Database.Database = db) {
+        this.repository = new SecurityRepository(database);
+    }
+
     getSecurity(id: number) {
-        return repository.findById(id);
+        return this.repository.findById(id);
     }
 
     getListing(exchangeCode: string, symbol: string) {
-        return repository.findListing(exchangeCode, symbol);
+        return this.repository.findListing(exchangeCode, symbol);
     }
 }
