@@ -1,13 +1,20 @@
-import { PortfolioRepository } from "../repositories/portfolio.js";
+
+import type Database from "better-sqlite3";
 import { HoldingRepository } from "../repositories/holding.js";
+import { PortfolioRepository } from "../repositories/portfolio.js";
 import { SecurityRepository } from "../repositories/security.js";
 import db from "../db/database.js";
 
-const holdingRepository = new HoldingRepository(db);
-const portfolioRepository = new PortfolioRepository(db);
-const securityRepository = new SecurityRepository(db);
-
 export class HoldingService {
+    private readonly holdingRepository: HoldingRepository;
+    private readonly portfolioRepository: PortfolioRepository;
+    private readonly securityRepository: SecurityRepository;
+
+    constructor(database: Database.Database = db) {
+        this.holdingRepository = new HoldingRepository(database);
+        this.portfolioRepository = new PortfolioRepository(database);
+        this.securityRepository = new SecurityRepository(database);
+    }
 
     create(
         portfolioId: number,
@@ -18,17 +25,17 @@ export class HoldingService {
             throw new Error("Quantity must be greater than 0");
         }
 
-        const portfolio = portfolioRepository.findById(portfolioId);
+        const portfolio = this.portfolioRepository.findById(portfolioId);
         if (!portfolio) {
             throw new Error("Portfolio not found");
         }
 
-        const security = securityRepository.findById(securityId);
+        const security = this.securityRepository.findById(securityId);
         if (!security) {
             throw new Error("Security not found");
         }
 
-        return holdingRepository.create(
+        return this.holdingRepository.create(
             portfolioId,
             securityId,
             quantity
@@ -36,10 +43,14 @@ export class HoldingService {
     }
 
     findById(id: number) {
-        return holdingRepository.findById(id);
+        return this.holdingRepository.findById(id);
     }
 
     findByPortfolioId(portfolioId: number) {
-        return holdingRepository.findByPortfolioId(portfolioId);
+        return this.holdingRepository.findByPortfolioId(portfolioId);
+    }
+
+    findPortfolioById(portfolioId: number) {
+        return this.portfolioRepository.findById(portfolioId);
     }
 }

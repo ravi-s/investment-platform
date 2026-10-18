@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 // import type { FastifyPluginAsync } from "fastify";
+import { HoldingService } from "./services/holding.ts";
 
 import cookie from "@fastify/cookie";
 
@@ -45,7 +46,11 @@ await app.register(cookie);
 await app.register(securityRoutes);
 await app.register(userRoutes);
 await app.register(portfolioRoutes);
-await app.register(holdingRoutes);
+
+await app.register(holdingRoutes, {
+    service: new HoldingService(db),
+    sessionService,
+});
 await app.register(transactionRoutes, {
     service: new TransactionService(db),
     sessionService,

@@ -10,18 +10,14 @@ type Holding = {
 export class HoldingRepository {
     constructor(private readonly db: Database) { }
 
-    findById(id: number) {
+    findById(id: number): Holding | undefined {
         return this.db
             .prepare(`
-        SELECT
-          id,
-          portfolio_id,
-          security_id,
-          quantity
-        FROM holdings
-        WHERE id = ?
-      `)
-            .get(id);
+            SELECT id, portfolio_id, security_id, quantity
+            FROM holdings
+            WHERE id = ?
+        `)
+            .get(id) as Holding | undefined;
     }
 
     findByPortfolioId(portfolioId: number) {
