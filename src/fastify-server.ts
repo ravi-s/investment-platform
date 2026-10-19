@@ -22,6 +22,7 @@ import { authenticationRoutes } from "./routes/authentication.ts";
 import { AuthenticationService } from "./services/authentication.js";
 import { SessionService } from "./services/session.js";
 import { UserService } from "./services/user.ts";
+import { TransactionImportService } from "./services/transaction-import-service.ts";
 
 const app = Fastify({
     logger: true,
@@ -59,6 +60,7 @@ await app.register(holdingRoutes, {
 await app.register(transactionRoutes, {
     service: new TransactionService(db),
     sessionService,
+    importService: new TransactionImportService(db),
 });
 
 // Register authentication routes after the cookie plugin.

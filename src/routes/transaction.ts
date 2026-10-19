@@ -2,6 +2,7 @@ import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { TransactionService } from "../services/transaction.js";
 import type { SessionService } from "../services/session.js";
+import type { TransactionImportService } from "../services/transaction-import-service.js";
 import { authenticationGuard } from "./authentication-guard.js";
 
 const CreateTransactionSchema = z.discriminatedUnion("type", [
@@ -53,9 +54,10 @@ export async function transactionRoutes(
     options: {
         service: TransactionService;
         sessionService: SessionService;
+        importService: TransactionImportService;
     }
 ) {
-    const { service, sessionService } = options;
+    const { service, sessionService, importService } = options;
     const requireAuthentication = authenticationGuard(sessionService);
     app.addHook("preHandler", requireAuthentication);
 
@@ -404,6 +406,62 @@ export async function transactionRoutes(
                 Number(portfolioId),
                 result.data.asOf
             );
+        }
+    );
+
+    app.post<{
+        Params: { portfolioId: string };
+        Body: { csv: string };
+    }>(
+        "/api/portfolios/:portfolioId/transactions/import",
+        async (request, reply) => {
+            const portfolioId = Number(request.params.portfolioId);
+
+            if (!Number.isSafeInteger(portfolioId) || portfolioId <= 0) {
+                return reply.code(400).send({ error: "Invalid portfolio ID" });
+            }
+
+            const bodySchema = z.object({
+                csv: z.string().min(1),
+            }).strict();
+
+            const parsedBody = bodySchema.safeParse(request.body);
+
+            if (!parsedBody.success) {
+                return reply.code(400).send({ error: "Invalid request body" });
+            }
+
+            const portfolio = service.findPortfolioById(portfolioId);
+
+            if (
+                !portfolio ||
+                portfolio.user_id !== request.authenticatedUserId
+            ) {
+                return reply.code(404).send({ error: "Portfolio not found" });
+            }
+
+            try {
+                const imported = importService.importCsv(
+                    portfolioId,
+                    parsedBody.data.csv
+                );
+
+                return reply.code(201).send({
+                    importedCount: imported.length,
+                });
+            } catch (error) {
+                const message =
+                    error instanceof Error ? error.message : "Import failed";
+
+                if (
+                    message.includes("Insufficient holding") ||
+                    message.includes("Holding not found")
+                ) {
+                    return reply.code(409).send({ error: message });
+                }
+
+                return reply.code(400).send({ error: message });
+            }
         }
     );
 }

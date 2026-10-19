@@ -1,5 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import cookie from "@fastify/cookie";
+
 import Database from "better-sqlite3";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { transactionRoutes } from "../routes/transaction.js";
@@ -7,7 +10,7 @@ import { runMigrations } from "../db/migration-runner.ts";
 import { TransactionService } from "../services/transaction.js";
 import { SessionService } from "../services/session.js";
 import { SessionRepository } from "../repositories/session.js";
-import cookie from "@fastify/cookie";
+import { TransactionImportService } from "../services/transaction-import-service.js";
 
 describe("Transaction routes", () => {
     let app: FastifyInstance;
@@ -16,6 +19,7 @@ describe("Transaction routes", () => {
     let sessionService: SessionService;
     let portfolioId: number;
     let securityId: number;
+    let importService: TransactionImportService;
 
     beforeAll(async () => {
         db = new Database(":memory:");
@@ -43,6 +47,7 @@ describe("Transaction routes", () => {
         );
 
         service = new TransactionService(db);
+        importService = new TransactionImportService(db);
         sessionService = new SessionService(
             new SessionRepository(db),
         );
@@ -50,7 +55,7 @@ describe("Transaction routes", () => {
         app = Fastify();
 
         await app.register(cookie);
-        await app.register(transactionRoutes, { service, sessionService });
+        await app.register(transactionRoutes, { service, sessionService, importService });
     });
 
     async function authenticatedCookie(userId = 1): Promise<string> {
@@ -884,5 +889,90 @@ describe("Transaction routes", () => {
             error: "Portfolio not found",
         });
     });
+
+
+    it("imports transactions from CSV through the API", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+            `2026-10-03,${securityId},BUY,5,2550`,
+        ].join("\n");
+
+        const existingTransactionIds = new Set(
+            (
+                db.prepare(`
+      SELECT id
+      FROM transactions
+      WHERE portfolio_id = ?
+    `).all(portfolioId) as { id: number }[]
+            ).map((row) => row.id)
+        );
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.json()).toMatchObject({
+            importedCount: 2,
+        });
+
+        const transactions = (
+            db.prepare(`
+    SELECT id, security_id, type, quantity, price, transaction_date
+    FROM transactions
+    WHERE portfolio_id = ?
+    ORDER BY transaction_date, id
+  `).all(portfolioId) as {
+                id: number;
+                security_id: number;
+                type: string;
+                quantity: number;
+                price: number | null;
+                transaction_date: string;
+            }[]
+        ).filter((transaction) => !existingTransactionIds.has(transaction.id));
+
+        expect(
+            transactions.map(
+                ({ security_id, type, quantity, price, transaction_date }) => ({
+                    security_id,
+                    type,
+                    quantity,
+                    price,
+                    transaction_date,
+                })
+            )
+        ).toEqual([
+            {
+                security_id: securityId,
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                transaction_date: "2026-10-01",
+            },
+            {
+                security_id: securityId,
+                type: "BUY",
+                quantity: 5,
+                price: 2550,
+                transaction_date: "2026-10-03",
+            },
+        ]);
+
+
+
+        const holding = db.prepare(`
+        SELECT quantity
+        FROM holdings
+        WHERE portfolio_id = ? AND security_id = ?
+    `).get(portfolioId, securityId);
+
+        expect(holding).toEqual({ quantity: 15 });
+    });
+
 
 });
