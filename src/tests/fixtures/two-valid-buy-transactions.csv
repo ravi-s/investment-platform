@@ -1,0 +1,3 @@
+transactionDate,securityId,type,quantity,price
+2026-10-01,1,BUY,10,2500
+2026-10-03,1,BUY,5,2550
