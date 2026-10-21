@@ -3,7 +3,7 @@ import cookie from "@fastify/cookie";
 
 import Database from "better-sqlite3";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { transactionRoutes } from "../routes/transaction.js";
 import { runMigrations } from "../db/migration-runner.ts";
@@ -17,26 +17,27 @@ describe("Transaction routes", () => {
     let db: Database.Database;
     let service: TransactionService;
     let sessionService: SessionService;
+    let userId: number;
     let portfolioId: number;
     let securityId: number;
     let importService: TransactionImportService;
 
-    beforeAll(async () => {
+    beforeEach(async () => {
         db = new Database(":memory:");
         db.pragma("foreign_keys = ON");
 
         runMigrations(db);
 
-        db.prepare(`
+        userId = Number(db.prepare(`
             INSERT INTO users (name, email)
             VALUES (?, ?)
-        `).run("Route User", "route@example.com");
+        `).run("Route User", "route@example.com").lastInsertRowid);
 
         portfolioId = Number(
             db.prepare(`
                 INSERT INTO portfolios (user_id, name)
                 VALUES (?, ?)
-            `).run(1, "Route Portfolio").lastInsertRowid
+            `).run(userId, "Route Portfolio").lastInsertRowid
         );
 
         securityId = Number(
@@ -58,8 +59,8 @@ describe("Transaction routes", () => {
         await app.register(transactionRoutes, { service, sessionService, importService });
     });
 
-    async function authenticatedCookie(userId = 1): Promise<string> {
-        const session = sessionService.createSession(userId);
+    async function authenticatedCookie(requestedUserId = userId): Promise<string> {
+        const session = sessionService.createSession(requestedUserId);
         return `session=${session.token}`;
     }
 
@@ -67,16 +68,16 @@ describe("Transaction routes", () => {
         method: "GET" | "POST";
         url: string;
         payload?: Record<string, unknown>;
-    }, userId = 1) {
+    }, requestedUserId = userId) {
         return app.inject({
             ...options,
             headers: {
-                cookie: await authenticatedCookie(userId),
+                cookie: await authenticatedCookie(requestedUserId),
             },
         });
     }
 
-    afterAll(async () => {
+    afterEach(async () => {
         await app.close();
         db.close();
     });
@@ -412,7 +413,7 @@ describe("Transaction routes", () => {
             db.prepare(`
             INSERT INTO portfolios (user_id, name)
             VALUES (?, ?)
-        `).run(1, "Insufficient Sell Portfolio").lastInsertRowid
+        `).run(userId, "Insufficient Sell Portfolio").lastInsertRowid
         );
 
         service.create(
@@ -445,6 +446,15 @@ describe("Transaction routes", () => {
     });
 
     it("returns transactions for a portfolio", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            3,
+            125,
+            "2026-09-28"
+        );
+
         const response = await injectAuthenticated({
             method: "GET",
             url: `/api/portfolios/${portfolioId}/transactions`,
@@ -452,15 +462,16 @@ describe("Transaction routes", () => {
 
         expect(response.statusCode).toBe(200);
 
-        expect(response.json()).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    portfolio_id: portfolioId,
-                    security_id: securityId,
-                    type: "BUY",
-                }),
-            ])
-        );
+        expect(response.json()).toEqual([
+            expect.objectContaining({
+                portfolio_id: portfolioId,
+                security_id: securityId,
+                type: "BUY",
+                quantity: 3,
+                price: 125,
+                transaction_date: "2026-09-28",
+            }),
+        ]);
     });
 
     it("filters portfolio transactions by date range", async () => {
@@ -614,7 +625,7 @@ describe("Transaction routes", () => {
             db.prepare(`
             INSERT INTO portfolios (user_id, name)
             VALUES (?, ?)
-        `).run(1, "Holding As Of Portfolio").lastInsertRowid
+        `).run(userId, "Holding As Of Portfolio").lastInsertRowid
         );
 
         service.create(
@@ -655,7 +666,7 @@ describe("Transaction routes", () => {
             db.prepare(`
             INSERT INTO portfolios (user_id, name)
             VALUES (?, ?)
-        `).run(1, "Holding Change Portfolio").lastInsertRowid
+        `).run(userId, "Holding Change Portfolio").lastInsertRowid
         );
 
         service.create(
@@ -706,7 +717,7 @@ describe("Transaction routes", () => {
             db.prepare(`
             INSERT INTO portfolios (user_id, name)
             VALUES (?, ?)
-        `).run(1, "Securities As Of Portfolio").lastInsertRowid
+        `).run(userId, "Securities As Of Portfolio").lastInsertRowid
         );
 
         const secondSecurityId = Number(
@@ -898,16 +909,6 @@ describe("Transaction routes", () => {
             `2026-10-03,${securityId},BUY,5,2550`,
         ].join("\n");
 
-        const existingTransactionIds = new Set(
-            (
-                db.prepare(`
-      SELECT id
-      FROM transactions
-      WHERE portfolio_id = ?
-    `).all(portfolioId) as { id: number }[]
-            ).map((row) => row.id)
-        );
-
         const response = await injectAuthenticated({
             method: "POST",
             url: `/api/portfolios/${portfolioId}/transactions/import`,
@@ -934,7 +935,7 @@ describe("Transaction routes", () => {
                 price: number | null;
                 transaction_date: string;
             }[]
-        ).filter((transaction) => !existingTransactionIds.has(transaction.id));
+        );
 
         expect(
             transactions.map(
