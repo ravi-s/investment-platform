@@ -281,4 +281,43 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
     });
+
+    it("rejects importing the same CSV twice without changing transactions or holdings", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        expect(importService.importCsv(portfolioId, csv)).toHaveLength(1);
+
+        const transactionCountBeforeDuplicate = db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transactions
+            WHERE portfolio_id = ?
+        `).get(portfolioId);
+        const holdingBeforeDuplicate = db.prepare(`
+            SELECT quantity
+            FROM holdings
+            WHERE portfolio_id = ? AND security_id = ?
+        `).get(portfolioId, securityId);
+
+        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+            "CSV file has already been imported"
+        );
+
+        const transactionCountAfterDuplicate = db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transactions
+            WHERE portfolio_id = ?
+        `).get(portfolioId);
+        const holdingAfterDuplicate = db.prepare(`
+            SELECT quantity
+            FROM holdings
+            WHERE portfolio_id = ? AND security_id = ?
+        `).get(portfolioId, securityId);
+
+        expect(transactionCountAfterDuplicate).toEqual(transactionCountBeforeDuplicate);
+        expect(holdingAfterDuplicate).toEqual(holdingBeforeDuplicate);
+    });
+
 });
