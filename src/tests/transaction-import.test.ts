@@ -230,4 +230,55 @@ describe("Transaction CSV import", () => {
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
     });
+
+    it("rejects duplicate CSV headers", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price,price",
+            `2026-10-01,${securityId},BUY,10,2500,2500`,
+        ].join("\n");
+
+        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+            "Invalid CSV: duplicate header price"
+        );
+
+        const transactions = db.prepare(`
+        SELECT id FROM transactions WHERE portfolio_id = ?
+       `).all(portfolioId);
+
+        expect(transactions).toEqual([]);
+    });
+
+    it("rejects CSV files with a missing required header", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity",
+            `2026-10-01,${securityId},BUY,10`,
+        ].join("\n");
+
+        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+            "Invalid CSV: missing required header price"
+        );
+
+        const transactions = db.prepare(`
+        SELECT id FROM transactions WHERE portfolio_id = ?
+       `).all(portfolioId);
+
+        expect(transactions).toEqual([]);
+    });
+
+    it("rejects invalid calendar dates in CSV rows", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-02-30,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+            "Invalid CSV row 2: transactionDate must be a valid YYYY-MM-DD date"
+        );
+
+        const transactions = db.prepare(`
+         SELECT id FROM transactions WHERE portfolio_id = ?
+       `).all(portfolioId);
+
+        expect(transactions).toEqual([]);
+    });
 });

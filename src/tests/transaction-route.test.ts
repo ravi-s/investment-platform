@@ -902,7 +902,60 @@ describe("Transaction routes", () => {
     });
 
 
-    it("imports transactions from CSV through the API", async () => {
+    it("rejects an unauthenticated CSV import", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(401);
+        expect(response.json()).toEqual({
+            error: "Authentication required",
+        });
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
+
+
+    it("prevents a user from importing transactions into another user's portfolio", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Import User", "other-import@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const response = await injectAuthenticated(
+            {
+                method: "POST",
+                url: `/api/portfolios/${portfolioId}/transactions/import`,
+                payload: { csv },
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Portfolio not found",
+        });
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
+    it("allows an authorized user to import valid CSV through the API", async () => {
         const csv = [
             "transactionDate,securityId,type,quantity,price",
             `2026-10-01,${securityId},BUY,10,2500`,
