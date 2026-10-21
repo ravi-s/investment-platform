@@ -2,7 +2,10 @@ import { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { TransactionService } from "../services/transaction.js";
 import type { SessionService } from "../services/session.js";
-import type { TransactionImportService } from "../services/transaction-import-service.js";
+import {
+    CsvImportValidationError,
+    type TransactionImportService,
+} from "../services/transaction-import-service.js";
 import { authenticationGuard } from "./authentication-guard.js";
 
 const CreateTransactionSchema = z.discriminatedUnion("type", [
@@ -450,6 +453,10 @@ export async function transactionRoutes(
                     importedCount: imported.length,
                 });
             } catch (error) {
+                if (error instanceof CsvImportValidationError) {
+                    return reply.code(400).send({ error: error.message });
+                }
+
                 const message =
                     error instanceof Error ? error.message : "Import failed";
 
@@ -460,7 +467,11 @@ export async function transactionRoutes(
                     return reply.code(409).send({ error: message });
                 }
 
-                return reply.code(400).send({ error: message });
+                request.log.error({ err: error }, "CSV transaction import failed");
+
+                return reply.code(500).send({
+                    error: "Internal server error",
+                });
             }
         }
     );

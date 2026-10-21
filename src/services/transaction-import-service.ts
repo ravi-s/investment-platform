@@ -14,6 +14,14 @@ type CsvTransaction = {
     price: number;
 };
 
+/** Identifies failures caused by malformed CSV input or invalid CSV values. */
+export class CsvImportValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "CsvImportValidationError";
+    }
+}
+
 /** CSV columns that must be present to create a transaction. */
 const requiredHeaders = [
     "transactionDate",
@@ -39,7 +47,7 @@ function parsePositiveNumber(value: string, fieldName: string, rowNumber: number
         !Number.isFinite(parsed) ||
         parsed <= 0
     ) {
-        throw new Error(
+        throw new CsvImportValidationError(
             `Invalid CSV row ${rowNumber}: ${fieldName} must be a positive number`
         );
     }
@@ -56,7 +64,7 @@ function parseTransaction(
         const index = indexes.get(header);
         const value = index === undefined ? undefined : fields[index];
         if (value === undefined || value.trim() === "") {
-            throw new Error(
+            throw new CsvImportValidationError(
                 `Invalid CSV row ${rowNumber}: ${header} is required`
             );
         }
@@ -67,7 +75,7 @@ function parseTransaction(
     // Reuse the application's date schema for format and calendar-date validation.
     const parsedDate = DateOnlySchema.safeParse(transactionDate);
     if (!parsedDate.success) {
-        throw new Error(
+        throw new CsvImportValidationError(
             `Invalid CSV row ${rowNumber}: transactionDate must be a valid YYYY-MM-DD date`
         );
     }
@@ -79,14 +87,14 @@ function parseTransaction(
     );
     // A security identifier must be a whole number, not merely a positive decimal.
     if (!Number.isSafeInteger(securityId)) {
-        throw new Error(
+        throw new CsvImportValidationError(
             `Invalid CSV row ${rowNumber}: securityId must be a positive integer`
         );
     }
 
     const type = valueFor("type");
     if (type !== "BUY" && type !== "SELL") {
-        throw new Error(
+        throw new CsvImportValidationError(
             `Invalid CSV row ${rowNumber}: type must be BUY or SELL`
         );
     }
@@ -119,9 +127,18 @@ export class TransactionImportService {
      */
     importCsv(portfolioId: number, csv: string) {
         return this.db.transaction(() => {
-            const [header, ...rows] = parseCsvRecords(csv);
+            let records: string[][];
+            try {
+                records = parseCsvRecords(csv);
+            } catch (error) {
+                // Normalize CSV syntax/parser failures without changing transaction errors.
+                const message = error instanceof Error ? error.message : String(error);
+                throw new CsvImportValidationError(`Invalid CSV: ${message}`);
+            }
+
+            const [header, ...rows] = records;
             if (!header) {
-                throw new Error("Invalid CSV: header row is required");
+                throw new CsvImportValidationError("Invalid CSV: header row is required");
             }
 
             const normalizedHeader = header.map(value => value.trim());
@@ -130,17 +147,17 @@ export class TransactionImportService {
             // Reject empty or duplicate names before building the column lookup.
             normalizedHeader.forEach((name, index) => {
                 if (name === "") {
-                    throw new Error("Invalid CSV: header names must not be empty");
+                    throw new CsvImportValidationError("Invalid CSV: header names must not be empty");
                 }
                 if (indexes.has(name)) {
-                    throw new Error(`Invalid CSV: duplicate header ${name}`);
+                    throw new CsvImportValidationError(`Invalid CSV: duplicate header ${name}`);
                 }
                 indexes.set(name, index);
             });
 
             for (const name of requiredHeaders) {
                 if (!indexes.has(name)) {
-                    throw new Error(`Invalid CSV: missing required header ${name}`);
+                    throw new CsvImportValidationError(`Invalid CSV: missing required header ${name}`);
                 }
             }
 
@@ -149,7 +166,7 @@ export class TransactionImportService {
             const transactions = rows.map((fields, index) => {
                 const rowNumber = index + 2;
                 if (fields.length !== normalizedHeader.length) {
-                    throw new Error(
+                    throw new CsvImportValidationError(
                         `Invalid CSV row ${rowNumber}: expected ${normalizedHeader.length} fields, received ${fields.length}`
                     );
                 }

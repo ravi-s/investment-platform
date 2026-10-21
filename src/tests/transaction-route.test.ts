@@ -3,7 +3,7 @@ import cookie from "@fastify/cookie";
 
 import Database from "better-sqlite3";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { transactionRoutes } from "../routes/transaction.js";
 import { runMigrations } from "../db/migration-runner.ts";
@@ -1028,5 +1028,119 @@ describe("Transaction routes", () => {
         expect(holding).toEqual({ quantity: 15 });
     });
 
+    it("returns 400 when CSV syntax is malformed", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `"2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(400);
+
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
+    it("returns 400 when a CSV row contains an invalid transaction date", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-02-30,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({
+            error: "Invalid CSV row 2: transactionDate must be a valid YYYY-MM-DD date",
+        });
+
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
+    it("returns 409 and rolls back an import when a SELL exceeds the holding", async () => {
+        service.create(
+            portfolioId,
+            securityId,
+            "BUY",
+            10,
+            100,
+            "2026-09-29"
+        );
+
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,5,110`,
+            `2026-10-02,${securityId},SELL,16,120`,
+        ].join("\n");
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: "Insufficient holding",
+        });
+
+        const transactions = db.prepare(`
+        SELECT type, quantity
+        FROM transactions
+        WHERE portfolio_id = ?
+        ORDER BY transaction_date, id
+    `).all(portfolioId);
+
+        expect(transactions).toEqual([
+            { type: "BUY", quantity: 10 },
+        ]);
+
+        const holding = db.prepare(`
+    SELECT quantity
+    FROM holdings
+    WHERE portfolio_id = ? AND security_id = ?
+`).get(portfolioId, securityId);
+
+        expect(holding).toEqual({ quantity: 10 });
+    });
+
+    it("returns 500 when CSV import fails unexpectedly", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const importSpy = vi
+            .spyOn(importService, "importCsv")
+            .mockImplementation(() => {
+                throw new Error("Unexpected database failure");
+            });
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(500);
+        expect(response.json()).not.toHaveProperty(
+            "error",
+            "Unexpected database failure"
+        );
+
+        importSpy.mockRestore();
+    });
 
 });
