@@ -195,6 +195,7 @@ describe("Transaction CSV import", () => {
         ]);
     });
 
+
     it("returns no transactions for a header-only CSV", () => {
         const csv = "transactionDate,securityId,type,quantity,price";
 

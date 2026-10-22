@@ -1028,6 +1028,81 @@ describe("Transaction routes", () => {
         expect(holding).toEqual({ quantity: 15 });
     });
 
+    it("returns 409 when the same CSV is imported twice through the API", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        // First import should succeed.
+        const firstResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(firstResponse.statusCode).toBe(201);
+        expect(firstResponse.json()).toEqual({ importedCount: 1 });
+
+        // Capture persisted state after the successful import.
+        const transactionsBefore = db.prepare(`
+        SELECT id, type, quantity
+        FROM transactions
+        WHERE portfolio_id = ?
+        ORDER BY id
+    `).all(portfolioId);
+
+        const holdingBefore = db.prepare(`
+        SELECT quantity
+        FROM holdings
+        WHERE portfolio_id = ? AND security_id = ?
+    `).get(portfolioId, securityId);
+
+        const importHistoryBefore = db.prepare(`
+        SELECT id, content_hash
+        FROM transaction_imports
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        // Submitting identical content to the same portfolio must be rejected.
+        const duplicateResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import`,
+            payload: { csv },
+        });
+
+        expect(duplicateResponse.statusCode).toBe(409);
+        expect(duplicateResponse.json()).toEqual({
+            error: "CSV file has already been imported",
+        });
+
+        // The duplicate request must not change persisted state.
+        expect(
+            db.prepare(`
+            SELECT id, type, quantity
+            FROM transactions
+            WHERE portfolio_id = ?
+            ORDER BY id
+        `).all(portfolioId)
+        ).toEqual(transactionsBefore);
+
+        expect(
+            db.prepare(`
+            SELECT quantity
+            FROM holdings
+            WHERE portfolio_id = ? AND security_id = ?
+        `).get(portfolioId, securityId)
+        ).toEqual(holdingBefore);
+
+        expect(
+            db.prepare(`
+            SELECT id, content_hash
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId)
+        ).toEqual(importHistoryBefore);
+    });
+
     it("returns 400 when CSV syntax is malformed", async () => {
         const csv = [
             "transactionDate,securityId,type,quantity,price",
