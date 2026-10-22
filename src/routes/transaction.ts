@@ -445,6 +445,7 @@ export async function transactionRoutes(
 
             try {
                 const imported = importService.importCsv(
+                    request.authenticatedUserId,
                     portfolioId,
                     parsedBody.data.csv
                 );
@@ -462,7 +463,8 @@ export async function transactionRoutes(
 
                 if (
                     message.includes("Insufficient holding") ||
-                    message.includes("Holding not found")
+                    message.includes("Holding not found") ||
+                    message.includes("CSV file has already been imported")
                 ) {
                     return reply.code(409).send({ error: message });
                 }

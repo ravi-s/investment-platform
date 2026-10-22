@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runMigrations } from "../db/migration-runner.js";
 import { TransactionImportService } from "../services/transaction-import-service.js";
@@ -10,6 +11,7 @@ describe("Transaction CSV import", () => {
     let portfolioId: number;
     let securityId: number;
     let importService: TransactionImportService;
+    let userId: number;
 
     beforeEach(() => {
         db = new Database(":memory:");
@@ -17,16 +19,19 @@ describe("Transaction CSV import", () => {
 
         runMigrations(db);
 
-        db.prepare(`
-            INSERT INTO users (name, email)
-            VALUES (?, ?)
-        `).run("Import Test User", "transaction-import@example.com");
+
+        userId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Import Test User", "transaction-import@example.com").lastInsertRowid
+        );
 
         portfolioId = Number(
             db.prepare(`
                 INSERT INTO portfolios (user_id, name)
                 VALUES (?, ?)
-            `).run(1, "Import Test Portfolio").lastInsertRowid
+            `).run(userId, "Import Test Portfolio").lastInsertRowid
         );
 
         securityId = Number(
@@ -49,7 +54,7 @@ describe("Transaction CSV import", () => {
             "utf8"
         );
 
-        await importService.importCsv(portfolioId, csv);
+        await importService.importCsv(userId, portfolioId, csv);
 
         const transactions = db.prepare(`
             SELECT security_id, type, quantity, price, transaction_date
@@ -82,6 +87,19 @@ describe("Transaction CSV import", () => {
         `).get(portfolioId);
 
         expect(holding).toEqual({ quantity: 15 });
+
+        const importHistory = db.prepare(`
+            SELECT user_id, portfolio_id, content_hash
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId);
+
+        expect(importHistory).toHaveLength(1);
+        expect(importHistory[0]).toMatchObject({
+            user_id: userId,
+            portfolio_id: portfolioId,
+            content_hash: createHash("sha256").update(csv).digest("hex"),
+        });
     });
 
     it("leaves the database unchanged when a valid row is followed by an invalid row", () => {
@@ -91,7 +109,7 @@ describe("Transaction CSV import", () => {
             `2026-10-03,${securityId},SELL,11,2550`,
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Insufficient holding"
         );
 
@@ -108,6 +126,14 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+        expect(importHistory).toEqual([]);
     });
 
     it("leaves the database unchanged when the second CSV row is missing a required value", () => {
@@ -117,7 +143,7 @@ describe("Transaction CSV import", () => {
             `2026-10-03,${securityId},BUY,,2550`,
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid CSV row 3: quantity is required"
         );
 
@@ -134,6 +160,14 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+        expect(importHistory).toEqual([]);
     });
 
     it("imports correctly when CSV columns are reordered", () => {
@@ -142,7 +176,7 @@ describe("Transaction CSV import", () => {
             `2500,BUY,2026-10-01,10,${securityId}`,
         ].join("\n");
 
-        importService.importCsv(portfolioId, csv);
+        importService.importCsv(userId, portfolioId, csv);
 
         const transactions = db.prepare(`
             SELECT security_id, type, quantity, price, transaction_date
@@ -164,7 +198,7 @@ describe("Transaction CSV import", () => {
     it("returns no transactions for a header-only CSV", () => {
         const csv = "transactionDate,securityId,type,quantity,price";
 
-        expect(importService.importCsv(portfolioId, csv)).toEqual([]);
+        expect(importService.importCsv(userId, portfolioId, csv)).toEqual([]);
 
         const transactions = db.prepare(`
             SELECT id
@@ -179,6 +213,14 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+        expect(importHistory).toEqual([]);
     });
 
     it("rejects a whitespace-only record instead of silently ignoring it", () => {
@@ -187,7 +229,7 @@ describe("Transaction CSV import", () => {
             "   ",
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid Record Length: expect 5, got 1 on line 2"
         );
 
@@ -204,6 +246,14 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+        expect(importHistory).toEqual([]);
     });
 
     it("rejects a delimiter-only record because required values are missing", () => {
@@ -212,7 +262,7 @@ describe("Transaction CSV import", () => {
             ",,,,",
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid CSV row 2: transactionDate is required"
         );
 
@@ -229,6 +279,42 @@ describe("Transaction CSV import", () => {
 
         expect(transactions).toEqual([]);
         expect(holdings).toEqual([]);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+        expect(importHistory).toEqual([]);
+    });
+
+    it("rejects importing into a portfolio owned by another user", () => {
+        const anotherUserId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Another User", "another-transaction-import@example.com").lastInsertRowid
+        );
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        expect(() => importService.importCsv(anotherUserId, portfolioId, csv)).toThrow(
+            "Portfolio not found"
+        );
+
+        expect(db.prepare(`
+            SELECT id
+            FROM transactions
+            WHERE portfolio_id = ?
+        `).all(portfolioId)).toEqual([]);
+        expect(db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE portfolio_id = ?
+        `).all(portfolioId)).toEqual([]);
     });
 
     it("rejects duplicate CSV headers", () => {
@@ -237,7 +323,7 @@ describe("Transaction CSV import", () => {
             `2026-10-01,${securityId},BUY,10,2500,2500`,
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid CSV: duplicate header price"
         );
 
@@ -254,7 +340,7 @@ describe("Transaction CSV import", () => {
             `2026-10-01,${securityId},BUY,10`,
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid CSV: missing required header price"
         );
 
@@ -271,7 +357,7 @@ describe("Transaction CSV import", () => {
             `2026-02-30,${securityId},BUY,10,2500`,
         ].join("\n");
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "Invalid CSV row 2: transactionDate must be a valid YYYY-MM-DD date"
         );
 
@@ -288,7 +374,7 @@ describe("Transaction CSV import", () => {
             `2026-10-01,${securityId},BUY,10,2500`,
         ].join("\n");
 
-        expect(importService.importCsv(portfolioId, csv)).toHaveLength(1);
+        expect(importService.importCsv(userId, portfolioId, csv)).toHaveLength(1);
 
         const transactionCountBeforeDuplicate = db.prepare(`
             SELECT COUNT(*) AS count
@@ -301,7 +387,7 @@ describe("Transaction CSV import", () => {
             WHERE portfolio_id = ? AND security_id = ?
         `).get(portfolioId, securityId);
 
-        expect(() => importService.importCsv(portfolioId, csv)).toThrow(
+        expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
             "CSV file has already been imported"
         );
 
@@ -318,6 +404,67 @@ describe("Transaction CSV import", () => {
 
         expect(transactionCountAfterDuplicate).toEqual(transactionCountBeforeDuplicate);
         expect(holdingAfterDuplicate).toEqual(holdingBeforeDuplicate);
+
+        const importHistory = db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId);
+
+        expect(importHistory).toHaveLength(1);
+    });
+
+    it("rolls back transaction and holding writes when import-history registration fails", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        // Force failure at the final persistence step, after the BUY
+        // transaction and its holding update have been attempted.
+        const historyRepository = (importService as any).importHistoryRepository;
+        const createSpy = vi
+            .spyOn(historyRepository, "create")
+            .mockImplementation(() => {
+                throw new Error("Simulated import-history persistence failure");
+            });
+
+        try {
+            expect(() => importService.importCsv(userId, portfolioId, csv)).toThrow(
+                "Simulated import-history persistence failure"
+            );
+
+            // The transaction insert must have rolled back.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // The holding insert/update must have rolled back too.
+            expect(
+                db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // No import-history record should remain.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transaction_imports
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+            ).toEqual([]);
+
+            expect(createSpy).toHaveBeenCalledOnce();
+        } finally {
+            createSpy.mockRestore();
+        }
     });
 
 });

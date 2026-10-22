@@ -1,6 +1,9 @@
 import type Database from "better-sqlite3";
+import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
 
+import { ImportHistoryRepository } from "../repositories/import-history.js";
+import { PortfolioRepository } from "../repositories/portfolio.js";
 import { DateOnlySchema } from "../schema/date.js";
 import { TransactionService } from "./transaction.js";
 
@@ -115,9 +118,13 @@ function parseTransaction(
 /** Imports transaction rows from CSV, applying normal transaction rules atomically. */
 export class TransactionImportService {
     private readonly transactionService: TransactionService;
+    private readonly portfolioRepository: PortfolioRepository;
+    private readonly importHistoryRepository: ImportHistoryRepository;
 
     constructor(private readonly db: Database.Database) {
         this.transactionService = new TransactionService(db);
+        this.portfolioRepository = new PortfolioRepository(db);
+        this.importHistoryRepository = new ImportHistoryRepository(db);
     }
 
     /**
@@ -125,8 +132,13 @@ export class TransactionImportService {
      * service. The database transaction ensures that any failure rolls back
      * all transactions created by this import.
      */
-    importCsv(portfolioId: number, csv: string) {
+    importCsv(userId: number, portfolioId: number, csv: string) {
         return this.db.transaction(() => {
+            const portfolio = this.portfolioRepository.findById(portfolioId);
+            if (!portfolio || portfolio.user_id !== userId) {
+                throw new Error("Portfolio not found");
+            }
+
             let records: string[][];
             try {
                 records = parseCsvRecords(csv);
@@ -174,7 +186,16 @@ export class TransactionImportService {
                 return parseTransaction(fields, indexes, rowNumber);
             });
 
-            return transactions.map(transaction =>
+            if (transactions.length === 0) {
+                return [];
+            }
+
+            const contentHash = createHash("sha256").update(csv).digest("hex");
+            if (this.importHistoryRepository.exists(userId, portfolioId, contentHash)) {
+                throw new Error("CSV file has already been imported");
+            }
+
+            const importedTransactions = transactions.map(transaction =>
                 this.transactionService.create(
                     portfolioId,
                     transaction.securityId,
@@ -184,6 +205,10 @@ export class TransactionImportService {
                     transaction.transactionDate
                 )
             );
+
+            this.importHistoryRepository.create(userId, portfolioId, contentHash);
+
+            return importedTransactions;
         })();
     }
 }
