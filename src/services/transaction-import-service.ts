@@ -126,7 +126,54 @@ export class TransactionImportService {
         this.portfolioRepository = new PortfolioRepository(db);
         this.importHistoryRepository = new ImportHistoryRepository(db);
     }
+    private parseAndValidateCsv(csv: string): CsvTransaction[] {
+        let records: string[][];
+        try {
+            records = parseCsvRecords(csv);
+        } catch (error) {
+            // Normalize CSV syntax/parser failures without changing transaction errors.
+            const message = error instanceof Error ? error.message : String(error);
+            throw new CsvImportValidationError(`Invalid CSV: ${message}`);
+        }
 
+        const [header, ...rows] = records;
+        if (!header) {
+            throw new CsvImportValidationError("Invalid CSV: header row is required");
+        }
+
+        const normalizedHeader = header.map(value => value.trim());
+        const indexes = new Map<string, number>();
+
+        // Reject empty or duplicate names before building the column lookup.
+        normalizedHeader.forEach((name, index) => {
+            if (name === "") {
+                throw new CsvImportValidationError("Invalid CSV: header names must not be empty");
+            }
+            if (indexes.has(name)) {
+                throw new CsvImportValidationError(`Invalid CSV: duplicate header ${name}`);
+            }
+            indexes.set(name, index);
+        });
+
+        for (const name of requiredHeaders) {
+            if (!indexes.has(name)) {
+                throw new CsvImportValidationError(`Invalid CSV: missing required header ${name}`);
+            }
+        }
+
+        // The header is CSV row 1, so the first data record is row 2.
+        // Validate every data record before writing any transactions.
+        return rows.map((fields, index) => {
+            const rowNumber = index + 2;
+            if (fields.length !== normalizedHeader.length) {
+                throw new CsvImportValidationError(
+                    `Invalid CSV row ${rowNumber}: expected ${normalizedHeader.length} fields, received ${fields.length}`
+                );
+            }
+
+            return parseTransaction(fields, indexes, rowNumber);
+        });
+    }
     /**
      * Validates the CSV and delegates each row to the standard transaction
      * service. The database transaction ensures that any failure rolls back
@@ -139,52 +186,7 @@ export class TransactionImportService {
                 throw new Error("Portfolio not found");
             }
 
-            let records: string[][];
-            try {
-                records = parseCsvRecords(csv);
-            } catch (error) {
-                // Normalize CSV syntax/parser failures without changing transaction errors.
-                const message = error instanceof Error ? error.message : String(error);
-                throw new CsvImportValidationError(`Invalid CSV: ${message}`);
-            }
-
-            const [header, ...rows] = records;
-            if (!header) {
-                throw new CsvImportValidationError("Invalid CSV: header row is required");
-            }
-
-            const normalizedHeader = header.map(value => value.trim());
-            const indexes = new Map<string, number>();
-
-            // Reject empty or duplicate names before building the column lookup.
-            normalizedHeader.forEach((name, index) => {
-                if (name === "") {
-                    throw new CsvImportValidationError("Invalid CSV: header names must not be empty");
-                }
-                if (indexes.has(name)) {
-                    throw new CsvImportValidationError(`Invalid CSV: duplicate header ${name}`);
-                }
-                indexes.set(name, index);
-            });
-
-            for (const name of requiredHeaders) {
-                if (!indexes.has(name)) {
-                    throw new CsvImportValidationError(`Invalid CSV: missing required header ${name}`);
-                }
-            }
-
-            // The header is CSV row 1, so the first data record is row 2.
-            // Validate every data record before writing any transactions.
-            const transactions = rows.map((fields, index) => {
-                const rowNumber = index + 2;
-                if (fields.length !== normalizedHeader.length) {
-                    throw new CsvImportValidationError(
-                        `Invalid CSV row ${rowNumber}: expected ${normalizedHeader.length} fields, received ${fields.length}`
-                    );
-                }
-
-                return parseTransaction(fields, indexes, rowNumber);
-            });
+            const transactions = this.parseAndValidateCsv(csv);
 
             if (transactions.length === 0) {
                 return [];
