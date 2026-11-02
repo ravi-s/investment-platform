@@ -4,6 +4,8 @@ import { parse } from "csv-parse/sync";
 
 import { ImportHistoryRepository } from "../repositories/import-history.js";
 import { PortfolioRepository } from "../repositories/portfolio.js";
+import { TransactionImportBatchItemRepository } from "../repositories/transaction-import-batch-item.js";
+import { TransactionImportBatchRepository } from "../repositories/transaction-batch-import.js";
 import { DateOnlySchema } from "../schema/date.js";
 import { TransactionService } from "./transaction.js";
 
@@ -120,11 +122,15 @@ export class TransactionImportService {
     private readonly transactionService: TransactionService;
     private readonly portfolioRepository: PortfolioRepository;
     private readonly importHistoryRepository: ImportHistoryRepository;
+    private readonly transactionImportBatchRepository: TransactionImportBatchRepository;
+    private readonly transactionImportBatchItemRepository: TransactionImportBatchItemRepository;
 
     constructor(private readonly db: Database.Database) {
         this.transactionService = new TransactionService(db);
         this.portfolioRepository = new PortfolioRepository(db);
         this.importHistoryRepository = new ImportHistoryRepository(db);
+        this.transactionImportBatchRepository = new TransactionImportBatchRepository(db);
+        this.transactionImportBatchItemRepository = new TransactionImportBatchItemRepository(db);
     }
     private parseAndValidateCsv(csv: string): CsvTransaction[] {
         let records: string[][];
@@ -211,6 +217,56 @@ export class TransactionImportService {
             this.importHistoryRepository.create(userId, portfolioId, contentHash);
 
             return importedTransactions;
+        })();
+    }
+
+    /**
+     * Validates and persists a CSV as a staged import batch without creating
+     * transactions or recording the file in import history.
+     */
+    stageCsv(userId: number, portfolioId: number, csv: string) {
+        return this.db.transaction(() => {
+            const portfolio = this.portfolioRepository.findById(portfolioId);
+            if (!portfolio || portfolio.user_id !== userId) {
+                throw new Error("Portfolio not found");
+            }
+
+            const transactions = this.parseAndValidateCsv(csv);
+            const contentHash = createHash("sha256").update(csv).digest("hex");
+
+            if (
+                this.importHistoryRepository.exists(
+                    userId,
+                    portfolioId,
+                    contentHash
+                ) ||
+                this.transactionImportBatchRepository.exists(
+                    userId,
+                    portfolioId,
+                    contentHash
+                )
+            ) {
+                throw new Error("CSV file has already been imported or staged");
+            }
+
+            const batch = this.transactionImportBatchRepository.create(
+                userId,
+                portfolioId,
+                contentHash
+            );
+            const items = this.transactionImportBatchItemRepository.createMany(
+                batch.id,
+                transactions.map((transaction, index) => ({
+                    source_row: index + 2,
+                    transaction_date: transaction.transactionDate,
+                    security_id: transaction.securityId,
+                    type: transaction.type,
+                    quantity: transaction.quantity,
+                    price: transaction.price,
+                }))
+            );
+
+            return { batch, items };
         })();
     }
 }

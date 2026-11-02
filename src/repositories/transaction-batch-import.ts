@@ -40,6 +40,29 @@ export class TransactionImportBatchRepository {
             .get(batchId) as TransactionImportBatch | undefined;
     }
 
+    /** Checks whether this portfolio has a staged batch for the CSV content. */
+    exists(
+        userId: number,
+        portfolioId: number,
+        contentHash: string
+    ): boolean {
+        const row = this.db
+            .prepare(`
+                SELECT 1 AS found
+                FROM transaction_import_batches
+                WHERE user_id = ?
+                  AND portfolio_id = ?
+                  AND content_hash = ?
+                  AND status = 'STAGED'
+                LIMIT 1
+            `)
+            .get(userId, portfolioId, contentHash) as
+            | { found: number }
+            | undefined;
+
+        return row !== undefined;
+    }
+
     /** Creates a staged batch and returns its persisted row. */
     create(
         userId: number,
