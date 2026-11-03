@@ -295,6 +295,68 @@ describe("Transaction CSV import", () => {
         expect(items).toHaveLength(0);
     });
 
+    it("rolls back batch creation when staging items persistence fails", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Force failure when the staged items are being persisted.
+        const batchItemRepository = (importService as any)
+            .transactionImportBatchItemRepository;
+
+        const createManySpy = vi
+            .spyOn(batchItemRepository, "createMany")
+            .mockImplementation(() => {
+                throw new Error("Simulated batch-item persistence failure");
+            });
+
+        try {
+            expect(() =>
+                importService.stageCsv(userId, portfolioId, csv)
+            ).toThrow("Simulated batch-item persistence failure");
+
+            // The batch created earlier in the operation must be rolled back.
+            const batches = db.prepare(`
+            SELECT id
+            FROM transaction_import_batches
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId);
+
+            expect(batches).toEqual([]);
+
+            // No batch items should remain.
+            const items = db.prepare(`
+            SELECT id
+            FROM transaction_import_batch_items
+        `).all();
+
+            expect(items).toEqual([]);
+
+            // Staging must not create transactions or holdings.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(
+                db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(createManySpy).toHaveBeenCalledOnce();
+        } finally {
+            createManySpy.mockRestore();
+        }
+    });
+
+
     it("leaves the database unchanged when a valid row is followed by an invalid row", () => {
         const csv = [
             "transactionDate,securityId,type,quantity,price",
@@ -416,6 +478,58 @@ describe("Transaction CSV import", () => {
 
         expect(importHistory).toEqual([]);
     });
+
+
+    it("rejects staging a header-only CSV without creating a batch", () => {
+        const csv = "transactionDate,securityId,type,quantity,price";
+
+        expect(() =>
+            importService.stageCsv(userId, portfolioId, csv)
+        ).toThrow("CSV contains no transactions to stage");
+
+        // No staging batch should be created.
+        const batches = db.prepare(`
+        SELECT id
+        FROM transaction_import_batches
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        expect(batches).toEqual([]);
+
+        // No staging items should be created.
+        const items = db.prepare(`
+        SELECT id
+        FROM transaction_import_batch_items
+    `).all();
+
+        expect(items).toEqual([]);
+
+        // No transactions, holdings, or import history should be created.
+        expect(
+            db.prepare(`
+            SELECT id
+            FROM transactions
+            WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        expect(
+            db.prepare(`
+            SELECT id, quantity
+            FROM holdings
+            WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        expect(
+            db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId)
+        ).toEqual([]);
+    });
+
 
     it("rejects a whitespace-only record instead of silently ignoring it", () => {
         const csv = [

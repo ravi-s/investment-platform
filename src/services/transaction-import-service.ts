@@ -232,6 +232,10 @@ export class TransactionImportService {
             }
 
             const transactions = this.parseAndValidateCsv(csv);
+
+            if (transactions.length === 0) {
+                throw new Error("CSV contains no transactions to stage");
+            }
             const contentHash = createHash("sha256").update(csv).digest("hex");
 
             if (
