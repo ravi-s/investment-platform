@@ -102,6 +102,199 @@ describe("Transaction CSV import", () => {
         });
     });
 
+
+    it("stages valid CSV rows without modifying transactions, holdings, or import history", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        const result = importService.stageCsv(userId, portfolioId, csv);
+
+        // A reviewable batch should be created in STAGED status.
+        expect(result.batch).toMatchObject({
+            user_id: userId,
+            portfolio_id: portfolioId,
+            content_hash: createHash("sha256").update(csv).digest("hex"),
+            status: "STAGED",
+        });
+
+        // Both parsed CSV rows should be persisted as batch items.
+        expect(result.items).toHaveLength(2);
+
+        expect(result.items).toMatchObject([
+            {
+                source_row: 2,
+                transaction_date: "2026-10-01",
+                security_id: securityId,
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+            },
+            {
+                source_row: 3,
+                transaction_date: "2026-10-03",
+                security_id: securityId,
+                type: "BUY",
+                quantity: 5,
+                price: 2550,
+            },
+        ]);
+
+        // Staging must not apply transactions.
+        expect(
+            db.prepare(`
+            SELECT id FROM transactions WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        // Staging must not create or update holdings.
+        expect(
+            db.prepare(`
+            SELECT id, quantity FROM holdings WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        // Staging must not register an applied import.
+        expect(
+            db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId)
+        ).toEqual([]);
+    });
+
+
+    it("rejects staging the same CSV twice", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // First staging attempt succeeds.
+        const firstResult = importService.stageCsv(
+            userId,
+            portfolioId,
+            csv
+        );
+
+        expect(firstResult.batch.status).toBe("STAGED");
+        expect(firstResult.items).toHaveLength(2);
+
+        // Second staging attempt with identical content is rejected.
+        expect(() =>
+            importService.stageCsv(userId, portfolioId, csv)
+        ).toThrow();
+
+        // Only one batch should exist.
+        const batches = db.prepare(`
+        SELECT id
+        FROM transaction_import_batches
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        expect(batches).toHaveLength(1);
+
+        // Only the original two staged items should exist.
+        const items = db.prepare(`
+        SELECT id
+        FROM transaction_import_batch_items
+        WHERE batch_id = ?
+    `).all(firstResult.batch.id);
+
+        expect(items).toHaveLength(2);
+    });
+
+    it("rejects staging a CSV that has already been imported", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // First, successfully import the CSV.
+        const importedTransactions = importService.importCsv(
+            userId,
+            portfolioId,
+            csv
+        );
+
+        expect(importedTransactions).toHaveLength(2);
+
+        // Attempt to stage the same CSV.
+        expect(() =>
+            importService.stageCsv(userId, portfolioId, csv)
+        ).toThrow();
+
+        // No staging batch should have been created.
+        const batches = db.prepare(`
+        SELECT id
+        FROM transaction_import_batches
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        expect(batches).toHaveLength(0);
+
+        // The original imported transactions remain intact.
+        const transactions = db.prepare(`
+        SELECT id
+        FROM transactions
+        WHERE portfolio_id = ?
+    `).all(portfolioId);
+
+        expect(transactions).toHaveLength(2);
+    });
+
+
+    it("rejects staging a CSV into a portfolio owned by another user", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Create another user.
+        const otherUser = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("other-user", "other-user@test.com");
+
+        const otherUserId = Number(otherUser.lastInsertRowid);
+
+        // Create a portfolio belonging to that user.
+        const otherPortfolio = db.prepare(`
+        INSERT INTO portfolios (user_id, name)
+        VALUES (?, ?)
+    `).run(otherUserId, "Other User Portfolio");
+
+        const otherPortfolioId = Number(otherPortfolio.lastInsertRowid);
+
+        // The current user must not stage transactions in this portfolio.
+        expect(() =>
+            importService.stageCsv(
+                userId,
+                otherPortfolioId,
+                csv
+            )
+        ).toThrow();
+
+        // No staging batch should have been created.
+        const batches = db.prepare(`
+        SELECT id
+        FROM transaction_import_batches
+        WHERE portfolio_id = ?
+    `).all(otherPortfolioId);
+
+        expect(batches).toHaveLength(0);
+
+        // No staging items should have been created.
+        const items = db.prepare(`
+        SELECT id
+        FROM transaction_import_batch_items
+    `).all();
+
+        expect(items).toHaveLength(0);
+    });
+
     it("leaves the database unchanged when a valid row is followed by an invalid row", () => {
         const csv = [
             "transactionDate,securityId,type,quantity,price",
