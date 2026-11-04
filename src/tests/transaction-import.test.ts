@@ -769,6 +769,87 @@ describe("Transaction CSV import", () => {
     });
 
 
+    it("rolls back transaction and holding writes when applying a staged batch fails", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Stage the CSV first.
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+
+        expect(staged.batch.status).toBe("STAGED");
+
+        // Force failure at import-history registration, after transactions
+        // and holdings have been written within the enclosing transaction.
+        const historyRepository = (importService as any).importHistoryRepository;
+
+        const createSpy = vi
+            .spyOn(historyRepository, "create")
+            .mockImplementation(() => {
+                throw new Error("Simulated import-history persistence failure");
+            });
+
+        try {
+            expect(() =>
+                importService.applyStagedBatch(
+                    userId,
+                    portfolioId,
+                    staged.batch.id
+                )
+            ).toThrow("Simulated import-history persistence failure");
+
+            // All transaction writes must have been rolled back.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // All holding writes must have been rolled back.
+            expect(
+                db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // Import history must remain empty.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transaction_imports
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+            ).toEqual([]);
+
+            // The batch must remain STAGED, not partially applied.
+            const batch = db.prepare(`
+            SELECT status, applied_at
+            FROM transaction_import_batches
+            WHERE id = ?
+        `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+            expect(batch?.status).toBe("STAGED");
+            expect(batch?.applied_at).toBeNull();
+
+            // Staged items must still be available for retry.
+            const items = db.prepare(`
+            SELECT id
+            FROM transaction_import_batch_items
+            WHERE batch_id = ?
+        `).all(staged.batch.id);
+
+            expect(items).toHaveLength(2);
+            expect(createSpy).toHaveBeenCalledOnce();
+        } finally {
+            createSpy.mockRestore();
+        }
+    });
+
 
     it("rejects a whitespace-only record instead of silently ignoring it", () => {
         const csv = [
