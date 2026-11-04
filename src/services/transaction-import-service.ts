@@ -273,4 +273,74 @@ export class TransactionImportService {
             return { batch, items };
         })();
     }
+
+    /**
+     * Applies a previously staged transaction import batch atomically.
+     * All transactions, holdings, import history, and batch status
+     * changes are committed together or rolled back together.
+     */
+    applyStagedBatch(
+        userId: number,
+        portfolioId: number,
+        batchId: number
+    ) {
+        return this.db.transaction(() => {
+            const portfolio = this.portfolioRepository.findById(portfolioId);
+
+            if (!portfolio || portfolio.user_id !== userId) {
+                throw new Error("Portfolio not found");
+            }
+
+            const batch = this.transactionImportBatchRepository.findById(batchId);
+
+            if (
+                !batch ||
+                batch.user_id !== userId ||
+                batch.portfolio_id !== portfolioId
+            ) {
+                throw new Error("Import batch not found");
+            }
+
+            if (batch.status !== "STAGED") {
+                throw new Error("Import batch is not in STAGED status");
+            }
+
+            const items =
+                this.transactionImportBatchItemRepository.findByBatchId(batchId);
+
+            if (items.length === 0) {
+                throw new Error("Import batch contains no transactions");
+            }
+
+            const importedTransactions = items.map(item =>
+                this.transactionService.create(
+                    portfolioId,
+                    item.security_id,
+                    item.type,
+                    item.quantity,
+                    item.price,
+                    item.transaction_date
+                )
+            );
+
+            this.importHistoryRepository.create(
+                userId,
+                portfolioId,
+                batch.content_hash
+            );
+
+            const transitioned =
+                this.transactionImportBatchRepository.transitionStatus(
+                    batchId,
+                    "APPLIED"
+                );
+
+            if (!transitioned) {
+                throw new Error("Failed to transition import batch to APPLIED");
+            }
+
+            return importedTransactions;
+        })();
+    }
+
 }

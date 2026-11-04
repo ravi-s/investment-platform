@@ -530,6 +530,245 @@ describe("Transaction CSV import", () => {
         ).toEqual([]);
     });
 
+    it("applies a staged batch and marks it as APPLIED", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Stage the CSV first.
+        const staged = importService.stageCsv(
+            userId,
+            portfolioId,
+            csv
+        );
+
+        expect(staged.batch.status).toBe("STAGED");
+
+        // Apply the staged batch.
+        const appliedTransactions = importService.applyStagedBatch(
+            userId,
+            portfolioId,
+            staged.batch.id
+        );
+
+        expect(appliedTransactions).toHaveLength(2);
+
+        // Verify the transactions were created.
+        const transactions = db.prepare(`
+        SELECT security_id, type, quantity, price, transaction_date
+        FROM transactions
+        WHERE portfolio_id = ?
+        ORDER BY transaction_date
+    `).all(portfolioId);
+
+        expect(transactions).toEqual([
+            {
+                security_id: securityId,
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                transaction_date: "2026-10-01",
+            },
+            {
+                security_id: securityId,
+                type: "BUY",
+                quantity: 5,
+                price: 2550,
+                transaction_date: "2026-10-03",
+            },
+        ]);
+
+        // Holdings should reflect both transactions.
+        const holding = db.prepare(`
+        SELECT quantity
+        FROM holdings
+        WHERE portfolio_id = ? AND security_id = ?
+    `).get(portfolioId, securityId);
+
+        expect(holding).toEqual({ quantity: 15 });
+
+        // Import history should be registered using the original CSV hash.
+        const importHistory = db.prepare(`
+        SELECT user_id, portfolio_id, content_hash
+        FROM transaction_imports
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        expect(importHistory).toHaveLength(1);
+        expect(importHistory[0]).toMatchObject({
+            user_id: userId,
+            portfolio_id: portfolioId,
+            content_hash: createHash("sha256").update(csv).digest("hex"),
+        });
+
+        // The batch must now be APPLIED.
+        const batch = db.prepare(`
+        SELECT status, applied_at
+        FROM transaction_import_batches
+        WHERE id = ?
+    `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+        expect(batch?.status).toBe("APPLIED");
+        expect(batch?.applied_at).not.toBeNull();
+    });
+
+
+    it("rejects applying a staged batch belonging to another user", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Create another user.
+        const otherUserId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Other User", "other-user-apply@example.com").lastInsertRowid
+        );
+
+        // Create a portfolio belonging to that user.
+        const otherPortfolioId = Number(
+            db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(otherUserId, "Other User Portfolio").lastInsertRowid
+        );
+
+        // Stage a batch under the other user's ownership.
+        const staged = importService.stageCsv(
+            otherUserId,
+            otherPortfolioId,
+            csv
+        );
+
+        expect(staged.batch.status).toBe("STAGED");
+
+        // The current user attempts to apply the other user's batch.
+        expect(() =>
+            importService.applyStagedBatch(
+                userId,
+                portfolioId,
+                staged.batch.id
+            )
+        ).toThrow("Import batch not found");
+
+        // No transactions should have been created.
+        expect(
+            db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(otherPortfolioId)
+        ).toEqual([]);
+
+        // No holdings should have been created.
+        expect(
+            db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(otherPortfolioId)
+        ).toEqual([]);
+
+        // The batch must remain STAGED.
+        const batch = db.prepare(`
+            SELECT status, applied_at
+            FROM transaction_import_batches
+            WHERE id = ?
+        `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+        expect(batch?.status).toBe("STAGED");
+        expect(batch?.applied_at).toBeNull();
+    });
+
+    it("rejects reapplying an already applied batch without duplicating transactions", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        // Stage and apply the batch once.
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+
+        const firstApplication = importService.applyStagedBatch(
+            userId,
+            portfolioId,
+            staged.batch.id
+        );
+
+        expect(firstApplication).toHaveLength(2);
+
+        // Capture the database state after the successful application.
+        const transactionsBefore = db.prepare(`
+        SELECT id, security_id, type, quantity, price, transaction_date
+        FROM transactions
+        WHERE portfolio_id = ?
+        ORDER BY id
+    `).all(portfolioId);
+
+        const holdingBefore = db.prepare(`
+        SELECT quantity
+        FROM holdings
+        WHERE portfolio_id = ? AND security_id = ?
+    `).get(portfolioId, securityId);
+
+        const importHistoryBefore = db.prepare(`
+        SELECT id, user_id, portfolio_id, content_hash
+        FROM transaction_imports
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        // Attempt to apply the same batch again.
+        expect(() =>
+            importService.applyStagedBatch(
+                userId,
+                portfolioId,
+                staged.batch.id
+            )
+        ).toThrow("Import batch is not in STAGED status");
+
+        // No duplicate transactions.
+        const transactionsAfter = db.prepare(`
+        SELECT id, security_id, type, quantity, price, transaction_date
+        FROM transactions
+        WHERE portfolio_id = ?
+        ORDER BY id
+    `).all(portfolioId);
+
+        expect(transactionsAfter).toEqual(transactionsBefore);
+
+        // Holdings remain unchanged.
+        const holdingAfter = db.prepare(`
+        SELECT quantity
+        FROM holdings
+        WHERE portfolio_id = ? AND security_id = ?
+    `).get(portfolioId, securityId);
+
+        expect(holdingAfter).toEqual(holdingBefore);
+
+        // Import history remains unchanged.
+        const importHistoryAfter = db.prepare(`
+        SELECT id, user_id, portfolio_id, content_hash
+        FROM transaction_imports
+        WHERE user_id = ? AND portfolio_id = ?
+    `).all(userId, portfolioId);
+
+        expect(importHistoryAfter).toEqual(importHistoryBefore);
+
+        // The batch remains APPLIED.
+        const batch = db.prepare(`
+        SELECT status, applied_at
+        FROM transaction_import_batches
+        WHERE id = ?
+    `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+        expect(batch?.status).toBe("APPLIED");
+        expect(batch?.applied_at).not.toBeNull();
+    });
+
+
 
     it("rejects a whitespace-only record instead of silently ignoring it", () => {
         const csv = [
