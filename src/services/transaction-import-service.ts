@@ -343,4 +343,16 @@ export class TransactionImportService {
         })();
     }
 
+    /** Retrieves a transaction import batch by ID. */
+    findBatchById(batchId: number) {
+        return this.transactionImportBatchRepository.findById(batchId);
+    }
+
+    /** Retrieves all staged transaction rows belonging to a batch. */
+    findBatchItems(batchId: number) {
+        return this.transactionImportBatchItemRepository.findByBatchId(
+            batchId
+        );
+    }
+
 }

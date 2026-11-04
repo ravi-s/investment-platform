@@ -1218,4 +1218,93 @@ describe("Transaction routes", () => {
         importSpy.mockRestore();
     });
 
+    it("stages valid CSV through the API without creating transactions", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.json()).toMatchObject({
+            batchId: expect.any(Number),
+            status: "STAGED",
+            stagedCount: 1,
+        });
+
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM holdings").get()
+        ).toEqual({ count: 0 });
+    });
+
+    it("retrieves staged batch details and items through the API", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+            `2026-10-05,${securityId},BUY,5,2600`,
+        ].join("\n");
+
+        // Arrange: stage the CSV first
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        // Act: retrieve the staged batch for preview
+        const response = await injectAuthenticated({
+            method: "GET",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}`,
+        });
+
+        // Assert
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        expect(body.batch).toMatchObject({
+            id: batchId,
+            status: "STAGED",
+            portfolio_id: portfolioId,
+        });
+
+        expect(body.items).toHaveLength(2);
+
+        expect(body.items[0]).toMatchObject({
+            transaction_date: "2026-10-01",
+            security_id: securityId,
+            type: "BUY",
+            quantity: 10,
+            price: 2500,
+        });
+
+        expect(body.items[1]).toMatchObject({
+            transaction_date: "2026-10-05",
+            security_id: securityId,
+            type: "BUY",
+            quantity: 5,
+            price: 2600,
+        });
+
+        // Preview must not create actual transactions
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
 });

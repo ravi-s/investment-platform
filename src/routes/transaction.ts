@@ -64,6 +64,7 @@ export async function transactionRoutes(
     const requireAuthentication = authenticationGuard(sessionService);
     app.addHook("preHandler", requireAuthentication);
 
+    // Create a buy, sell, or split transaction after validating its portfolio ownership.
     app.post("/api/transactions", async (request, reply) => {
         const result = CreateTransactionSchema.safeParse(request.body);
 
@@ -152,6 +153,7 @@ export async function transactionRoutes(
         }
     });
 
+    // Return a transaction only when it belongs to the authenticated user.
     app.get("/api/transactions/:id", async (request, reply) => {
         const { id } = request.params as { id: string };
 
@@ -170,6 +172,7 @@ export async function transactionRoutes(
         return result;
     });
 
+    // List a portfolio's transactions, optionally filtered by a date range.
     app.get(
         "/api/portfolios/:portfolioId/transactions",
         async (request, reply) => {
@@ -217,6 +220,7 @@ export async function transactionRoutes(
         }
     );
 
+    // Report the quantity of a security held in a portfolio on a given date.
     app.get(
         "/api/portfolios/:portfolioId/securities/:securityId/holding",
         async (request, reply) => {
@@ -260,6 +264,8 @@ export async function transactionRoutes(
             };
         }
     );
+
+    // Report the change in a security's holding between two dates.
     app.get(
         "/api/portfolios/:portfolioId/securities/:securityId/holding/change",
         async (request, reply) => {
@@ -326,6 +332,7 @@ export async function transactionRoutes(
         }
     );
 
+    // List transactions for one security in a portfolio, optionally by date range.
     app.get(
         "/api/portfolios/:portfolioId/securities/:securityId/transactions",
         async (request, reply) => {
@@ -377,6 +384,7 @@ export async function transactionRoutes(
         }
     );
 
+    // List the securities held in a portfolio as of the requested date.
     app.get(
         "/api/portfolios/:portfolioId/securities",
         async (request, reply) => {
@@ -412,6 +420,7 @@ export async function transactionRoutes(
         }
     );
 
+    // Import portfolio transactions from CSV and report validation or conflict errors.
     app.post<{
         Params: { portfolioId: string };
         Body: { csv: string };
@@ -475,6 +484,116 @@ export async function transactionRoutes(
                     error: "Internal server error",
                 });
             }
+        }
+    );
+
+    app.post<{
+        Params: { portfolioId: string };
+        Body: { csv: string };
+    }>(
+        "/api/portfolios/:portfolioId/transactions/import/stage",
+        async (request, reply) => {
+            const portfolioId = Number(request.params.portfolioId);
+
+            if (!Number.isSafeInteger(portfolioId) || portfolioId <= 0) {
+                return reply.code(400).send({ error: "Invalid portfolio ID" });
+            }
+
+            const bodySchema = z.object({
+                csv: z.string().min(1),
+            }).strict();
+            const parsedBody = bodySchema.safeParse(request.body);
+
+            if (!parsedBody.success) {
+                return reply.code(400).send({ error: "Invalid request body" });
+            }
+
+            const userId = request.authenticatedUserId;
+
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            const portfolio = service.findPortfolioById(portfolioId);
+
+            if (!portfolio || portfolio.user_id !== userId) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
+                });
+            }
+
+            const result = importService.stageCsv(
+                userId,
+                portfolioId,
+                parsedBody.data.csv
+            );
+
+            return reply.status(201).send({
+                batchId: result.batch.id,
+                status: result.batch.status,
+                stagedCount: result.items.length,
+            });
+        }
+    );
+
+    app.get<{
+        Params: {
+            portfolioId: string;
+            batchId: string;
+        };
+    }>(
+        "/api/portfolios/:portfolioId/transactions/import/batches/:batchId",
+        async (request, reply) => {
+            const portfolioId = Number(request.params.portfolioId);
+            const batchId = Number(request.params.batchId);
+
+            if (
+                !Number.isSafeInteger(portfolioId) ||
+                portfolioId <= 0 ||
+                !Number.isSafeInteger(batchId) ||
+                batchId <= 0
+            ) {
+                return reply.code(400).send({
+                    error: "Invalid portfolio or batch ID",
+                });
+            }
+
+            const userId = request.authenticatedUserId;
+
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            const portfolio = service.findPortfolioById(portfolioId);
+
+            if (!portfolio || portfolio.user_id !== userId) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
+                });
+            }
+
+            const batch = importService.findBatchById(batchId);
+
+            if (
+                !batch ||
+                batch.user_id !== userId ||
+                batch.portfolio_id !== portfolioId
+            ) {
+                return reply.code(404).send({
+                    error: "Import batch not found",
+                });
+            }
+
+            const items = importService.findBatchItems(batchId);
+
+            return reply.code(200).send({
+                batch,
+                items,
+            });
         }
     );
 }
