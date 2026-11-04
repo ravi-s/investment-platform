@@ -1307,4 +1307,45 @@ describe("Transaction routes", () => {
             db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
         ).toEqual({ count: 0 });
     });
+
+    it("does not allow a user to retrieve another user's staged batch", async () => {
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Import User", "other-import@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        // Stage a batch as the portfolio owner.
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        // Attempt to retrieve it as a different authenticated user.
+        const response = await injectAuthenticated(
+            {
+                method: "GET",
+                url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}`,
+            },
+            otherUserId
+        );
+
+        expect(response.statusCode).toBe(404);
+
+        expect(response.json()).toMatchObject({
+            error: "Portfolio not found",
+        });
+    });
 });
