@@ -1476,5 +1476,22 @@ describe("Transaction routes", () => {
         ).toEqual({ count: 0 });
     });
 
+    it("rejects applying a staged batch with an invalid batch ID", async () => {
+        const response = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/abc/apply`,
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: "Invalid portfolio or batch ID",
+        });
+
+        // No transactions should be created
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
 
 });
