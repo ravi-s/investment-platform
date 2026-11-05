@@ -1348,4 +1348,133 @@ describe("Transaction routes", () => {
             error: "Portfolio not found",
         });
     });
+
+    it("applies a staged batch and marks it as APPLIED", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+            `2026-10-05,${securityId},BUY,5,2600`,
+        ].join("\n");
+
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        const applyResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`,
+        });
+
+        expect(applyResponse.statusCode).toBe(200);
+    });
+
+
+    it("rejects applying an already-applied staged batch", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+            `2026-10-05,${securityId},BUY,5,2600`,
+        ].join("\n");
+
+        // Arrange: stage the CSV
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        // Act: apply the staged batch for the first time
+        const firstApplyResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`,
+        });
+
+        expect(firstApplyResponse.statusCode).toBe(200);
+        expect(firstApplyResponse.json()).toEqual({
+            status: "APPLIED",
+            importedCount: 2,
+        });
+
+        // Act: attempt to apply the same batch again
+        const secondApplyResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`,
+        });
+
+        // Assert: reject the duplicate application
+        expect(secondApplyResponse.statusCode).toBe(409);
+        expect(secondApplyResponse.json()).toMatchObject({
+            error: "Import batch is not in STAGED status",
+        });
+
+        // Assert: no duplicate transactions were created
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 2 });
+    });
+
+
+    it("does not allow another user to apply a staged batch", async () => {
+        // Arrange: create another user
+        const result = db.prepare(`
+        INSERT INTO users (name, email)
+        VALUES (?, ?)
+    `).run("Other Import User", "other-import@example.com");
+
+        const otherUserId = Number(result.lastInsertRowid);
+
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        // Stage a batch as the portfolio owner (User A)
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        // Act: User B attempts to apply User A's batch
+        const applyResponse = await injectAuthenticated(
+            {
+                method: "POST",
+                url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`,
+            },
+            otherUserId
+        );
+
+        // Assert: access is denied
+        expect(applyResponse.statusCode).toBe(404);
+        expect(applyResponse.json()).toMatchObject({
+            error: "Portfolio not found",
+        });
+
+        // Assert: no transactions were created
+        expect(
+            db.prepare("SELECT COUNT(*) AS count FROM transactions").get()
+        ).toEqual({ count: 0 });
+    });
+
+
 });

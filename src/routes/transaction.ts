@@ -596,4 +596,101 @@ export async function transactionRoutes(
             });
         }
     );
+
+    app.post<{
+        Params: {
+            portfolioId: string;
+            batchId: string;
+        };
+    }>(
+        "/api/portfolios/:portfolioId/transactions/import/batches/:batchId/apply",
+        async (request, reply) => {
+            const portfolioId = Number(request.params.portfolioId);
+            const batchId = Number(request.params.batchId);
+
+            // Validate route parameters
+            if (
+                !Number.isSafeInteger(portfolioId) ||
+                portfolioId <= 0 ||
+                !Number.isSafeInteger(batchId) ||
+                batchId <= 0
+            ) {
+                return reply.code(400).send({
+                    error: "Invalid portfolio or batch ID",
+                });
+            }
+
+            // Authentication
+            const userId = request.authenticatedUserId;
+
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            // Verify portfolio ownership
+            const portfolio = service.findPortfolioById(portfolioId);
+
+            if (!portfolio || portfolio.user_id !== userId) {
+                return reply.code(404).send({
+                    error: "Portfolio not found",
+                });
+            }
+
+            // Verify batch ownership and association
+            const batch = importService.findBatchById(batchId);
+
+            if (
+                !batch ||
+                batch.user_id !== userId ||
+                batch.portfolio_id !== portfolioId
+            ) {
+                return reply.code(404).send({
+                    error: "Import batch not found",
+                });
+            }
+
+            // Apply the staged batch atomically through the service
+            try {
+                const importedTransactions =
+                    importService.applyStagedBatch(
+                        userId,
+                        portfolioId,
+                        batchId
+                    );
+
+                return reply.code(200).send({
+                    status: "APPLIED",
+                    importedCount: importedTransactions.length,
+                });
+            } catch (error) {
+                const message =
+                    error instanceof Error ? error.message : "";
+
+                if (message === "Import batch is not in STAGED status") {
+                    return reply.code(409).send({
+                        error: message,
+                    });
+                }
+
+                if (
+                    message === "Insufficient holding"
+                ) {
+                    return reply.code(409).send({
+                        error: message,
+                    });
+                }
+
+                request.log.error(
+                    { err: error },
+                    "Staged transaction batch application failed"
+                );
+
+                return reply.code(500).send({
+                    error: "Internal server error",
+                });
+            }
+        }
+    );
 }
