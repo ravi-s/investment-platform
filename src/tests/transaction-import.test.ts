@@ -851,6 +851,7 @@ describe("Transaction CSV import", () => {
     });
 
 
+
     it("rejects a whitespace-only record instead of silently ignoring it", () => {
         const csv = [
             "transactionDate,securityId,type,quantity,price",
@@ -1092,6 +1093,252 @@ describe("Transaction CSV import", () => {
             expect(createSpy).toHaveBeenCalledOnce();
         } finally {
             createSpy.mockRestore();
+        }
+    });
+
+    it("rolls back all changes when applying a staged batch encounters insufficient holdings", () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+            `2026-10-03,${securityId},SELL,11,2550`,
+        ].join("\n");
+
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+
+        expect(() =>
+            importService.applyStagedBatch(
+                userId,
+                portfolioId,
+                staged.batch.id
+            )
+        ).toThrow("Insufficient holding");
+
+        expect(
+            db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+        ).toEqual([]);
+
+        expect(
+            db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+        ).toEqual([]);
+
+        expect(
+            db.prepare(`
+                SELECT id
+                FROM transaction_imports
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+        ).toEqual([]);
+
+        const batch = db.prepare(`
+            SELECT status, applied_at
+            FROM transaction_import_batches
+            WHERE id = ?
+        `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+        expect(batch?.status).toBe("STAGED");
+        expect(batch?.applied_at).toBeNull();
+
+        expect(importService.findBatchItems(staged.batch.id)).toMatchObject([
+            { source_row: 2, type: "BUY", quantity: 10 },
+            { source_row: 3, type: "SELL", quantity: 11 },
+        ]);
+    });
+
+    it("rolls back all changes when a staged batch cannot transition to APPLIED", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+        const batchRepository = (importService as any)
+            .transactionImportBatchRepository;
+        const transitionSpy = vi
+            .spyOn(batchRepository, "transitionStatus")
+            .mockReturnValue(false);
+
+        try {
+            expect(() =>
+                importService.applyStagedBatch(
+                    userId,
+                    portfolioId,
+                    staged.batch.id
+                )
+            ).toThrow("Failed to transition import batch to APPLIED");
+
+            expect(
+                db.prepare(`
+                    SELECT id
+                    FROM transactions
+                    WHERE portfolio_id = ?
+                `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(
+                db.prepare(`
+                    SELECT id, quantity
+                    FROM holdings
+                    WHERE portfolio_id = ?
+                `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(
+                db.prepare(`
+                    SELECT id
+                    FROM transaction_imports
+                    WHERE user_id = ? AND portfolio_id = ?
+                `).all(userId, portfolioId)
+            ).toEqual([]);
+
+            const batch = db.prepare(`
+                SELECT status, applied_at
+                FROM transaction_import_batches
+                WHERE id = ?
+            `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+            expect(batch?.status).toBe("STAGED");
+            expect(batch?.applied_at).toBeNull();
+
+            const items = db.prepare(`
+                SELECT id
+                FROM transaction_import_batch_items
+                WHERE batch_id = ?
+            `).all(staged.batch.id);
+
+            expect(items).toHaveLength(2);
+            expect(transitionSpy).toHaveBeenCalledOnce();
+            expect(transitionSpy).toHaveBeenCalledWith(
+                staged.batch.id,
+                "APPLIED"
+            );
+        } finally {
+            transitionSpy.mockRestore();
+        }
+    });
+
+    it("successfully applies a staged batch after a failed application", async () => {
+        const csv = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+        const batchRepository = (importService as any)
+            .transactionImportBatchRepository;
+        const transitionSpy = vi
+            .spyOn(batchRepository, "transitionStatus")
+            .mockReturnValue(false);
+
+        try {
+            expect(() =>
+                importService.applyStagedBatch(
+                    userId,
+                    portfolioId,
+                    staged.batch.id
+                )
+            ).toThrow("Failed to transition import batch to APPLIED");
+
+            expect(
+                db.prepare(`
+                    SELECT id
+                    FROM transactions
+                    WHERE portfolio_id = ?
+                `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(
+                db.prepare(`
+                    SELECT id, quantity
+                    FROM holdings
+                    WHERE portfolio_id = ?
+                `).all(portfolioId)
+            ).toEqual([]);
+
+            expect(
+                db.prepare(`
+                    SELECT id
+                    FROM transaction_imports
+                    WHERE user_id = ? AND portfolio_id = ?
+                `).all(userId, portfolioId)
+            ).toEqual([]);
+
+            let batch = db.prepare(`
+                SELECT status, applied_at
+                FROM transaction_import_batches
+                WHERE id = ?
+            `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+            expect(batch?.status).toBe("STAGED");
+            expect(batch?.applied_at).toBeNull();
+
+            expect(importService.findBatchItems(staged.batch.id)).toHaveLength(2);
+            expect(transitionSpy).toHaveBeenCalledOnce();
+            expect(transitionSpy).toHaveBeenCalledWith(
+                staged.batch.id,
+                "APPLIED"
+            );
+
+            transitionSpy.mockRestore();
+
+            const appliedTransactions = importService.applyStagedBatch(
+                userId,
+                portfolioId,
+                staged.batch.id
+            );
+
+            expect(appliedTransactions).toHaveLength(2);
+            expect(
+                db.prepare(`
+                    SELECT type, quantity
+                    FROM transactions
+                    WHERE portfolio_id = ?
+                    ORDER BY transaction_date
+                `).all(portfolioId)
+            ).toEqual([
+                { type: "BUY", quantity: 10 },
+                { type: "BUY", quantity: 5 },
+            ]);
+
+            expect(
+                db.prepare(`
+                    SELECT quantity
+                    FROM holdings
+                    WHERE portfolio_id = ? AND security_id = ?
+                `).get(portfolioId, securityId)
+            ).toEqual({ quantity: 15 });
+
+            expect(
+                db.prepare(`
+                    SELECT user_id, portfolio_id, content_hash
+                    FROM transaction_imports
+                    WHERE user_id = ? AND portfolio_id = ?
+                `).all(userId, portfolioId)
+            ).toEqual([
+                {
+                    user_id: userId,
+                    portfolio_id: portfolioId,
+                    content_hash: createHash("sha256").update(csv).digest("hex"),
+                },
+            ]);
+
+            batch = db.prepare(`
+                SELECT status, applied_at
+                FROM transaction_import_batches
+                WHERE id = ?
+            `).get(staged.batch.id) as { status: string; applied_at: string | null };
+
+            expect(batch?.status).toBe("APPLIED");
+            expect(batch?.applied_at).not.toBeNull();
+        } finally {
+            transitionSpy.mockRestore();
         }
     });
 
