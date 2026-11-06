@@ -1493,5 +1493,73 @@ describe("Transaction routes", () => {
         ).toEqual({ count: 0 });
     });
 
+    it("returns 409 and preserves a staged batch when application fails due to insufficient holdings", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,5,110`,
+            `2026-10-02,${securityId},SELL,6,120`,
+        ].join("\n");
+
+        // Arrange: stage a batch whose second transaction cannot be applied.
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        // Act: attempt to apply the staged batch.
+        const applyResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`,
+        });
+
+        // Assert: domain failure is reported as a conflict.
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toEqual({
+            error: "Insufficient holding",
+        });
+
+        // No partial financial state should persist.
+        expect(
+            db.prepare(
+                "SELECT COUNT(*) AS count FROM transactions WHERE portfolio_id = ?"
+            ).get(portfolioId)
+        ).toEqual({ count: 0 });
+
+        expect(
+            db.prepare(
+                "SELECT COUNT(*) AS count FROM holdings WHERE portfolio_id = ?"
+            ).get(portfolioId)
+        ).toEqual({ count: 0 });
+
+        expect(
+            db.prepare(
+                "SELECT COUNT(*) AS count FROM transaction_imports WHERE portfolio_id = ?"
+            ).get(portfolioId)
+        ).toEqual({ count: 0 });
+
+        // The batch remains retryable, with its staged items intact.
+        const batch = db.prepare(
+            "SELECT status, applied_at FROM transaction_import_batches WHERE id = ?"
+        ).get(batchId);
+
+        expect(batch).toEqual({
+            status: "STAGED",
+            applied_at: null,
+        });
+
+        expect(
+            db.prepare(
+                "SELECT COUNT(*) AS count FROM transaction_import_batch_items WHERE batch_id = ?"
+            ).get(batchId)
+        ).toEqual({ count: 2 });
+    });
+
 
 });
