@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"tsc": "tsc",
-		"build": "tsc",
+		"build": "tsc && cp -R src/db/migrations dist/db/",
 		"test": "vitest run",
 		"run": "npx tsx"
 	},
