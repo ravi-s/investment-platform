@@ -1428,6 +1428,78 @@ describe("Transaction routes", () => {
     });
 
 
+    it("applies a staged batch only once when two apply requests arrive concurrently", async () => {
+        const csv = [
+            "transactionDate,securityId,type,quantity,price",
+            `2026-10-01,${securityId},BUY,10,2500`,
+        ].join("\n");
+
+        const stageResponse = await injectAuthenticated({
+            method: "POST",
+            url: `/api/portfolios/${portfolioId}/transactions/import/stage`,
+            payload: { csv },
+        });
+
+        expect(stageResponse.statusCode).toBe(201);
+
+        const { batchId } = stageResponse.json() as {
+            batchId: number;
+        };
+
+        const applyUrl =
+            `/api/portfolios/${portfolioId}/transactions/import/batches/${batchId}/apply`;
+
+        const [firstResponse, secondResponse] = await Promise.all([
+            injectAuthenticated({
+                method: "POST",
+                url: applyUrl,
+            }),
+            injectAuthenticated({
+                method: "POST",
+                url: applyUrl,
+            }),
+        ]);
+
+        expect([
+            firstResponse.statusCode,
+            secondResponse.statusCode,
+        ].sort()).toEqual([200, 409]);
+
+        expect(
+            db.prepare(`
+            SELECT status
+            FROM transaction_import_batches
+            WHERE id = ?
+        `).get(batchId)
+        ).toEqual({ status: "APPLIED" });
+
+        expect(
+            db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transactions
+            WHERE portfolio_id = ?
+        `).get(portfolioId)
+        ).toEqual({ count: 1 });
+
+        expect(
+            db.prepare(`
+            SELECT quantity
+            FROM holdings
+            WHERE portfolio_id = ? AND security_id = ?
+        `).get(portfolioId, securityId)
+        ).toEqual({ quantity: 10 });
+
+        expect(
+            db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transaction_imports
+            WHERE portfolio_id = ?
+        `).get(portfolioId)
+        ).toEqual({ count: 1 });
+    });
+
+
+
     it("does not allow another user to apply a staged batch", async () => {
         // Arrange: create another user
         const result = db.prepare(`
