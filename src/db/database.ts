@@ -10,6 +10,10 @@ mkdirSync(dbDir, { recursive: true });
 
 const db: Database.Database = new Database(dbPath);
 
-db.pragma("foreign_keys = ON");
+if (dbPath !== ":memory:") {
+    db.pragma("journal_mode = WAL");
+}
 
+db.pragma("foreign_keys = ON");
+db.pragma("busy_timeout = 5000");
 export default db;

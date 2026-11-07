@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 // import type { FastifyPluginAsync } from "fastify";
+import { assertSchemaReady } from "./db/schema-readiness.js";
 import { HoldingService } from "./services/holding.ts";
 
 import cookie from "@fastify/cookie";
@@ -17,6 +18,9 @@ import { portfolioRoutes } from "./routes/portfolio.js";
 import { holdingRoutes } from "./routes/holding.js";
 import { transactionRoutes } from "./routes/transaction.js";
 import db from "./db/database.js";
+
+assertSchemaReady(db);
+
 import { TransactionService } from "./services/transaction.js";
 import { authenticationRoutes } from "./routes/authentication.ts";
 import { AuthenticationService } from "./services/authentication.js";
