@@ -41,7 +41,7 @@ export const authenticationRoutes: FastifyPluginAsync<
                 });
             }
 
-            return user;
+            return reply.send({ user });
         },
     );
 

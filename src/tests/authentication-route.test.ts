@@ -107,6 +107,29 @@ describe("Authentication routes", () => {
         db.close();
     });
 
+    async function loginAndGetSessionToken(): Promise<string> {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/auth/login",
+            payload: { email, password },
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const setCookie = response.headers["set-cookie"];
+        const cookieHeader = Array.isArray(setCookie)
+            ? setCookie[0]
+            : setCookie;
+
+        const token = cookieHeader?.match(/session=([^;]+)/)?.[1];
+
+        if (!token) {
+            throw new Error("Login response did not set a session cookie");
+        }
+
+        return token;
+    }
+
     it("logs in with valid credentials and creates a session", async () => {
         const response = await app.inject({
             method: "POST",
@@ -199,6 +222,31 @@ describe("Authentication routes", () => {
         );
     });
 
+
+    it("clears the session cookie when the supplied session token is invalid", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/auth/logout",
+            headers: {
+                cookie: "session=invalid-session-token",
+            },
+        });
+
+        expect(response.statusCode).toBe(204);
+
+        const setCookie = response.headers["set-cookie"];
+        const cookieHeader = Array.isArray(setCookie)
+            ? setCookie.join("; ")
+            : setCookie ?? "";
+
+        expect(cookieHeader).toContain("session=");
+        expect(cookieHeader).toContain("HttpOnly");
+        expect(cookieHeader).toContain("SameSite=Lax");
+        expect(cookieHeader).toContain("Path=/");
+        expect(cookieHeader).toContain("Max-Age=0");
+    });
+
+
     it("clears the session cookie when no session is present", async () => {
         const response = await app.inject({
             method: "POST",
@@ -283,4 +331,58 @@ describe("Authentication routes", () => {
 
         expect(sessions.count).toBe(0);
     });
+
+
+    describe("GET /api/auth/me", () => {
+        it("returns the authenticated user when a valid session exists", async () => {
+            const token = await loginAndGetSessionToken();
+
+            const response = await app.inject({
+                method: "GET",
+                url: "/api/auth/me",
+                headers: {
+                    cookie: `session=${token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toEqual({
+                user: {
+                    id: userId,
+                    name: userName,
+                    email,
+                },
+            });
+
+            expect(response.json().user).not.toHaveProperty("password");
+            expect(response.json().user).not.toHaveProperty("passwordHash");
+        });
+
+        it("returns 401 when the session cookie is missing", async () => {
+            const response = await app.inject({
+                method: "GET",
+                url: "/api/auth/me",
+            });
+
+            expect(response.statusCode).toBe(401);
+        });
+
+        it("returns 401 when the session token is invalid", async () => {
+            const response = await app.inject({
+                method: "GET",
+                url: "/api/auth/me",
+                headers: {
+                    cookie: "session=invalid-session-token",
+                },
+            });
+
+            expect(response.statusCode).toBe(401);
+        });
+    });
+
+
+
+
 });
+
+

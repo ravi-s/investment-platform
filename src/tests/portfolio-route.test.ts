@@ -787,5 +787,179 @@ describe("Portfolio routes", () => {
         expect(createdPortfolio.name).toBe("tester5 Test Portfolio");
     });
 
+    // Review: omitting the required name must fail request validation.
+    it("rejects portfolio creation when the name is missing", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
+            payload: {},
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: "Invalid portfolio data",
+        });
+    });
+
+    // Review: an empty name must not create a portfolio.
+    it("rejects an empty portfolio name", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
+            payload: {
+                name: "",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: "Invalid portfolio data",
+        });
+    });
+
+    // Review: trimming before validation prevents whitespace-only names.
+    it("rejects a whitespace-only portfolio name", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
+            payload: {
+                name: "   \t ",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: "Invalid portfolio data",
+        });
+    });
+
+    // Review: names must be strings rather than values coerced by validation.
+    it("rejects a non-string portfolio name", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
+            payload: {
+                name: 123,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: "Invalid portfolio data",
+        });
+    });
+
+    // Review: a body-supplied userId must never change session-derived ownership.
+    it("ignores a supplied userId when creating a portfolio", async () => {
+        const otherUserId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Ownership Override User", "ownership-override@example.com")
+                .lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(1),
+            },
+            payload: {
+                name: "Session-Owned Portfolio",
+                userId: otherUserId,
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.json()).toMatchObject({
+            user_id: 1,
+            name: "Session-Owned Portfolio",
+        });
+        expect(response.json().user_id).not.toBe(otherUserId);
+    });
+
+    // Review: a valid session with no owned portfolios should receive an empty list.
+    it("returns an empty array when the authenticated user has no portfolios", async () => {
+        const userId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("User Without Portfolios", "no-portfolios@example.com")
+                .lastInsertRowid
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(userId),
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual([]);
+    });
+
+    // Review: list every portfolio owned by the session user and exclude all other owners.
+    it("returns all authenticated-user portfolios while excluding other users' portfolios", async () => {
+        const userId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("User With Multiple Portfolios", "multiple-portfolios@example.com")
+                .lastInsertRowid
+        );
+        const firstPortfolioId = Number(
+            db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(userId, "First Owned Portfolio").lastInsertRowid
+        );
+        const secondPortfolioId = Number(
+            db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(userId, "Second Owned Portfolio").lastInsertRowid
+        );
+        db.prepare(`
+            INSERT INTO portfolios (user_id, name)
+            VALUES (?, ?)
+        `).run(1, "Another User's Portfolio");
+
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(userId),
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual([
+            {
+                id: firstPortfolioId,
+                user_id: userId,
+                name: "First Owned Portfolio",
+            },
+            {
+                id: secondPortfolioId,
+                user_id: userId,
+                name: "Second Owned Portfolio",
+            },
+        ]);
+    });
 
 });
