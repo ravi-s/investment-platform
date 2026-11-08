@@ -17,8 +17,7 @@ import { authenticationGuard } from "./authentication-guard.js";
 // Validate client-supplied portfolio fields before calling the service.
 // Ownership is always taken from the authenticated session, not this payload.
 const CreatePortfolioSchema = z.object({
-    userId: z.number().int().positive(),
-    name: z.string().min(1),
+    name: z.string().trim().min(1),
 });
 
 // Shared date validation keeps historical portfolio queries consistent.
@@ -72,6 +71,22 @@ export async function portfolioRoutes(
 
     const requireAuthentication = authenticationGuard(
         options.sessionService,
+    );
+
+    app.get(
+        "/api/portfolios",
+        { preHandler: requireAuthentication },
+        async (request, reply) => {
+            const userId = request.authenticatedUserId;
+
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            return portfolioService.getPortfoliosForUser(userId);
+        },
     );
 
     // Create a portfolio for the signed-in user; never trust a user ID from the body.

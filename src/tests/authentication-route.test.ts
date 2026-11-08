@@ -16,6 +16,7 @@ import { SessionService } from "../services/session.js";
 import { CredentialRepository } from "../repositories/credential.js";
 import { SessionRepository } from "../repositories/session.js";
 import { authenticationRoutes } from "../routes/authentication.ts";
+import { UserService } from "../services/user.js";
 
 describe("Authentication routes", () => {
     let app: FastifyInstance;
@@ -90,6 +91,7 @@ describe("Authentication routes", () => {
         await app.register(authenticationRoutes, {
             authenticationService,
             sessionService,
+            userService: new UserService(db),
         });
 
         await app.ready();
@@ -145,6 +147,66 @@ describe("Authentication routes", () => {
             .get(userId) as { count: number };
 
         expect(storedSessions.count).toBe(1);
+    });
+
+    it("logs out and revokes the current session", async () => {
+        const loginResponse = await app.inject({
+            method: "POST",
+            url: "/api/auth/login",
+            payload: { email, password },
+        });
+        const setCookie = loginResponse.headers["set-cookie"];
+        const cookieHeader = Array.isArray(setCookie)
+            ? setCookie[0]
+            : setCookie;
+        const token = cookieHeader?.match(/session=([^;]+)/)?.[1];
+
+        if (!token) {
+            throw new Error("Login response did not set a session cookie");
+        }
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/auth/logout",
+            headers: {
+                cookie: `session=${token}`,
+            },
+        });
+
+        expect(response.statusCode).toBe(204);
+
+        const clearCookie = response.headers["set-cookie"];
+        const clearCookieHeader = Array.isArray(clearCookie)
+            ? clearCookie.join("; ")
+            : clearCookie ?? "";
+
+        expect(clearCookieHeader).toContain("session=");
+        expect(clearCookieHeader).toContain("HttpOnly");
+        expect(clearCookieHeader).toContain("SameSite=Lax");
+        expect(clearCookieHeader).toContain("Path=/");
+        expect(clearCookieHeader).toContain("Max-Age=0");
+
+        const storedSessions = db
+            .prepare(`
+        SELECT COUNT(*) AS count
+        FROM sessions
+      `)
+            .get() as { count: number };
+
+        expect(storedSessions.count).toBe(0);
+        expect(() => sessionService.validateSession(token)).toThrow(
+            "Invalid or expired session",
+        );
+    });
+
+    it("clears the session cookie when no session is present", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/auth/logout",
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(response.headers["set-cookie"]).toContain("Max-Age=0");
     });
 
     it("rejects an incorrect password without creating a session", async () => {

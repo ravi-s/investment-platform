@@ -23,6 +23,17 @@ export class PortfolioRepository {
             .get(id) as { id: number; user_id: number; name: string } | undefined;
     }
 
+    findByUserId(userId: number) {
+        return this.db
+            .prepare(`
+                SELECT id, user_id, name
+                FROM portfolios
+                WHERE user_id = ?
+                ORDER BY id
+            `)
+            .all(userId) as { id: number; user_id: number; name: string }[];
+    }
+
     findHoldings(portfolioId: number) {
         return this.db
             .prepare(`

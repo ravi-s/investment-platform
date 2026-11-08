@@ -24,6 +24,7 @@ describe("Portfolio routes", () => {
     let sessionService: SessionService;
 
     let portfolioId: number;
+    let otherUserPortfolioId: number;
     let securityId: number;
     let listingId: number;
 
@@ -38,11 +39,25 @@ describe("Portfolio routes", () => {
             VALUES (?, ?)
         `).run("Portfolio Route User", "portfolio-route@example.com");
 
+        const otherUserId = Number(
+            db.prepare(`
+                INSERT INTO users (name, email)
+                VALUES (?, ?)
+            `).run("Other Portfolio User", "other-portfolio-route@example.com")
+                .lastInsertRowid
+        );
+
         portfolioId = Number(
             db.prepare(`
                 INSERT INTO portfolios (user_id, name)
                 VALUES (?, ?)
             `).run(1, "Portfolio Route Test").lastInsertRowid
+        );
+        otherUserPortfolioId = Number(
+            db.prepare(`
+                INSERT INTO portfolios (user_id, name)
+                VALUES (?, ?)
+            `).run(otherUserId, "Other User Portfolio").lastInsertRowid
         );
         securityId = Number(
             db.prepare(`
@@ -106,6 +121,35 @@ describe("Portfolio routes", () => {
     afterAll(async () => {
         await app.close();
         db.close();
+    });
+
+    it("lists only portfolios belonging to the authenticated user", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios",
+            headers: {
+                cookie: await authenticatedCookie(),
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toContainEqual({
+            id: portfolioId,
+            user_id: 1,
+            name: "Portfolio Route Test",
+        });
+        expect(response.json()).not.toContainEqual(
+            expect.objectContaining({ id: otherUserPortfolioId }),
+        );
+    });
+
+    it("requires authentication to list portfolios", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/api/portfolios",
+        });
+
+        expect(response.statusCode).toBe(401);
     });
 
     it("rejects an invalid calendar date for portfolio valuation", async () => {
@@ -699,7 +743,6 @@ describe("Portfolio routes", () => {
             method: "POST",
             url: "/api/portfolios",
             payload: {
-                userId: 1,
                 name: "Unauthenticated Portfolio",
             },
         });
@@ -723,7 +766,6 @@ describe("Portfolio routes", () => {
                 cookie: await authenticatedCookie(1),
             },
             payload: {
-                userId: otherUserId,
                 name: "tester5 Test Portfolio",
             },
         });

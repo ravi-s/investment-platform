@@ -70,7 +70,8 @@ await app.register(transactionRoutes, {
 // Register authentication routes after the cookie plugin.
 await app.register(authenticationRoutes, {
     authenticationService,
-    sessionService
+    sessionService,
+    userService: new UserService(db),
 });
 
 app.listen({ port: 3001 }, (err, address) => {

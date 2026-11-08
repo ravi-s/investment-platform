@@ -34,6 +34,10 @@ import type Database from "better-sqlite3"; export class PortfolioService {
         return this.portfolioRepository.findById(id);
     }
 
+    getPortfoliosForUser(userId: number) {
+        return this.portfolioRepository.findByUserId(userId);
+    }
+
     getHoldings(portfolioId: number) {
         return this.portfolioRepository.findHoldings(portfolioId);
     }

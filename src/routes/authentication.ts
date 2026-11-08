@@ -2,10 +2,13 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AuthenticationService } from "../services/authentication.js";
 import type { SessionService } from "../services/session.js";
+import type { UserService } from "../services/user.js";
+import { authenticationGuard } from "./authentication-guard.ts";
 
 interface AuthenticationRouteOptions {
     authenticationService: AuthenticationService;
     sessionService: SessionService;
+    userService: Pick<UserService, "getUser">;
 }
 
 const loginSchema = z.object({
@@ -15,7 +18,50 @@ const loginSchema = z.object({
 
 export const authenticationRoutes: FastifyPluginAsync<
     AuthenticationRouteOptions
-> = async (app, { authenticationService, sessionService }) => {
+> = async (app, { authenticationService, sessionService, userService }) => {
+    app.get(
+        "/api/auth/me",
+        {
+            preHandler: authenticationGuard(sessionService),
+        },
+        async (request, reply) => {
+            const userId = request.authenticatedUserId;
+
+            if (userId === null) {
+                return reply.code(401).send({
+                    error: "Authentication required",
+                });
+            }
+
+            const user = userService.getUser(userId);
+
+            if (!user) {
+                return reply.code(404).send({
+                    error: "User not found",
+                });
+            }
+
+            return user;
+        },
+    );
+
+    app.post("/api/auth/logout", async (request, reply) => {
+        const token = request.cookies?.session;
+
+        if (token) {
+            sessionService.revokeSession(token);
+        }
+
+        reply.clearCookie("session", {
+            httpOnly: true,
+            sameSite: "lax",
+            path: "/",
+            secure: process.env.NODE_ENV === "production",
+        });
+
+        return reply.code(204).send();
+    });
+
     app.post("/api/auth/login", async (request, reply) => {
         const parsed = loginSchema.safeParse(request.body);
 
