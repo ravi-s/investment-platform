@@ -4,6 +4,7 @@ import db from "../db/database.js";
 import { UserRepository } from "../repositories/user.js";
 import { CredentialRepository } from "../repositories/credential.js";
 import { PasswordHasher } from "./password-hasher.js";
+import { DuplicateEmailError } from "../errors/duplicate-email-error.js";
 
 export class UserService {
     private readonly repository: UserRepository;
@@ -41,7 +42,19 @@ export class UserService {
             return user;
         });
 
-        return register();
+        try {
+            return register();
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                "code" in error &&
+                error.code === "SQLITE_CONSTRAINT_UNIQUE"
+            ) {
+                throw new DuplicateEmailError();
+            }
+
+            throw error;
+        }
     }
 
     getUser(id: number) {

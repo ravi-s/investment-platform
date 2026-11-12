@@ -46,12 +46,13 @@ const authenticationService = new AuthenticationService(
 );
 
 const sessionService = new SessionService(sessionRepository);
+const userService = new UserService(db);
 
 await app.register(cookie);
 
 await app.register(securityRoutes);
 await app.register(userRoutes, {
-    service: new UserService(db),
+    service: userService,
     sessionService,
 });
 await app.register(portfolioRoutes, {
@@ -71,7 +72,7 @@ await app.register(transactionRoutes, {
 await app.register(authenticationRoutes, {
     authenticationService,
     sessionService,
-    userService: new UserService(db),
+    userService: userService,
 });
 
 app.listen({ port: 3001 }, (err, address) => {

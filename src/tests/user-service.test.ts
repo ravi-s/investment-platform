@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { runMigrations } from "../db/migration-runner.ts";
 import { UserService } from "../services/user.ts";
+import { DuplicateEmailError } from "../errors/duplicate-email-error.ts";
 
 describe("UserService", () => {
     let db: Database.Database;
@@ -104,14 +105,24 @@ describe("UserService", () => {
                 email,
                 "Another-Password-123",
             ),
-        ).rejects.toThrow();
+        ).rejects.toThrow(DuplicateEmailError);
 
         const result = db.prepare(`
-            SELECT COUNT(*) AS count
-            FROM users
-            WHERE email = ?
-        `).get(email) as { count: number };
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE email = ?
+    `).get(email) as { count: number };
 
         expect(result.count).toBe(1);
+
+        const credentialResult = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM user_credentials
+        WHERE user_id = (
+            SELECT id FROM users WHERE email = ?
+        )
+    `).get(email) as { count: number };
+
+        expect(credentialResult.count).toBe(1);
     });
 });
