@@ -21,9 +21,9 @@ export class UserService {
         this.passwordHasher = passwordHasher;
     }
 
-    createUser(name: string, email: string) {
+    /* createUser(name: string, email: string) {
         return this.repository.create(name, email);
-    }
+    } */
 
     async registerUser(name: string, email: string, password: string) {
         // Hash asynchronously before opening the synchronous transaction.

@@ -27,11 +27,11 @@ export async function userRoutes(
             });
         }
 
-        const user = service.createUser(
+        const user = await service.registerUser(
             result.data.name,
             result.data.email,
+            result.data.password,
         );
-
         return reply.code(201).send(user);
     });
 

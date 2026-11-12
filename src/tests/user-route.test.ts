@@ -126,6 +126,7 @@ describe("User routes", () => {
             payload: {
                 name: "New User",
                 email: "new-user@example.com",
+                password: "Test-Password-123",
             },
         });
 
