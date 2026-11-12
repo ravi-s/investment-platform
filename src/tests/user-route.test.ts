@@ -152,4 +152,55 @@ describe("User routes", () => {
             error: "Invalid user data",
         });
     });
+
+    it("should return 409 when registering with an existing email", async () => {
+        const email = "duplicate@example.com";
+
+        const firstResponse = await app.inject({
+            method: "POST",
+            url: "/api/users",
+            payload: {
+                name: "First User",
+                email,
+                password: "Test-Password-123",
+            },
+        });
+
+        expect(firstResponse.statusCode).toBe(201);
+
+        const secondResponse = await app.inject({
+            method: "POST",
+            url: "/api/users",
+            payload: {
+                name: "Second User",
+                email,
+                password: "Another-Password-123",
+            },
+        });
+
+        expect(secondResponse.statusCode).toBe(409);
+        expect(secondResponse.json()).toEqual({
+            error: "An account with this email already exists",
+        });
+
+        const userCount = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE email = ?
+    `).get(email) as { count: number };
+
+        expect(userCount.count).toBe(1);
+
+        const credentialCount = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM user_credentials
+        WHERE user_id = (
+            SELECT id FROM users WHERE email = ?
+        )
+    `).get(email) as { count: number };
+
+        expect(credentialCount.count).toBe(1);
+    });
+
+
 });

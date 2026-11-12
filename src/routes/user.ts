@@ -5,6 +5,8 @@ import { SessionService } from "../services/session.js";
 import { authenticationGuard } from "./authentication-guard.ts";
 import { CreateUserSchema } from "../contracts/user.js";
 
+import { DuplicateEmailError } from "../errors/duplicate-email-error.js";
+
 type UserRouteOptions = {
     service: UserService;
     sessionService: SessionService;
@@ -27,12 +29,22 @@ export async function userRoutes(
             });
         }
 
-        const user = await service.registerUser(
-            result.data.name,
-            result.data.email,
-            result.data.password,
-        );
-        return reply.code(201).send(user);
+        try {
+            const user = await service.registerUser(
+                result.data.name,
+                result.data.email,
+                result.data.password,
+            );
+            return reply.code(201).send(user);
+        } catch (error) {
+            if (error instanceof DuplicateEmailError) {
+                return reply.code(409).send({
+                    error: "An account with this email already exists",
+                });
+            }
+
+            throw error;
+        }
     });
 
     // User lookup requires authentication.
