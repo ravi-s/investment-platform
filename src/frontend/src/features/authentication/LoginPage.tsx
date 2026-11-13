@@ -2,7 +2,7 @@ import Card from "../../components/Card";
 import Button from "../../components/Button";
 
 import { useState } from "react";
-
+import { Link } from "react-router";
 import { login } from "../../services/auth.service";
 function LoginPage() {
 	const [email, setEmail] = useState("");
@@ -83,6 +83,15 @@ function LoginPage() {
 						{isSubmitting ? "Logging in..." : "Login"}
 					</Button>
 				</form>
+				<p className="mt-4 text-center text-sm">
+					Don't have an account?{" "}
+					<Link
+						to="/register"
+						className="font-medium text-blue-600 hover:underline"
+					>
+						Register
+					</Link>
+				</p>
 			</Card>
 		</div>
 	);

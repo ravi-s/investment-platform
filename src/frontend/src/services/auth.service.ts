@@ -10,6 +10,10 @@ interface LoginResponse {
     user: AuthUser;
 }
 
+interface RegisterResponse {
+    user: AuthUser;
+}
+
 export async function login(
     email: string,
     password: string,
@@ -33,6 +37,30 @@ export async function login(
 
     // Extract and return the authenticated user from the response.
     const result = data as LoginResponse;
+
+    return result.user;
+}
+
+export async function register(
+    name: string,
+    email: string,
+    password: string,
+): Promise<AuthUser> {
+    const response = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, email, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || "Registration failed");
+    }
+
+    const result = data as RegisterResponse;
 
     return result.user;
 }
