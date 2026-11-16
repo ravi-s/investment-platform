@@ -2,13 +2,17 @@ import Card from "../../components/Card";
 import Button from "../../components/Button";
 
 import { useState } from "react";
-import { Link } from "react-router";
-import { login } from "../../services/auth.service";
+import { Link, useNavigate } from "react-router";
+
+import { useAuth } from "./useAuth";
+
 function LoginPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState("");
+	const { login } = useAuth();
+	const navigate = useNavigate();
 
 	async function handleSubmit(event: React.SubmitEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -17,9 +21,8 @@ function LoginPage() {
 		setError("");
 
 		try {
-			const user = await login(email, password);
-
-			console.log("Login successful:", user);
+			await login(email, password);
+			navigate("/portfolios");
 		} catch (err) {
 			setError(
 				err instanceof Error
