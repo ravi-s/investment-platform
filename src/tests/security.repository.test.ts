@@ -15,10 +15,10 @@ describe("SecurityRepository", () => {
 
         const security = testDb
             .prepare(`
-            INSERT INTO securities (name)
-            VALUES (?)
+            INSERT INTO securities (name, isin)
+            VALUES (?, ?)
         `)
-            .run("Reliance Industries Limited");
+            .run("Reliance Industries Limited", "INE002A01018");
 
         testDb
             .prepare(`
@@ -50,6 +50,21 @@ describe("SecurityRepository", () => {
                 "500325"
             );
 
+        // Insert securities with NULL ISIN for testing multiple NULL values
+        testDb
+            .prepare(`
+            INSERT INTO securities (name, isin)
+            VALUES (?, ?)
+        `)
+            .run("Security Without ISIN 1", null);
+
+        testDb
+            .prepare(`
+            INSERT INTO securities (name, isin)
+            VALUES (?, ?)
+        `)
+            .run("Security Without ISIN 2", null);
+
         repository = new SecurityRepository(testDb);
     });
 
@@ -78,5 +93,59 @@ describe("SecurityRepository", () => {
         expect(result).toBeDefined();
         expect(result?.exchange_code).toBe("BSE");
         expect(result?.symbol).toBe("500325");
+    });
+
+    // Test 1: A security can be found using its ISIN
+    it("finds a security by ISIN", () => {
+        const result = repository.findByIsin("INE002A01018");
+
+        expect(result).toBeDefined();
+        expect(result?.isin).toBe("INE002A01018");
+        expect(result?.name).toBe("Reliance Industries Limited");
+    });
+
+    // Test 2: ISIN lookup is case-insensitive
+    it("finds a security by ISIN in a case-insensitive manner", () => {
+        const result = repository.findByIsin("ine002a01018");
+
+        expect(result).toBeDefined();
+        expect(result?.isin).toBe("INE002A01018");
+        expect(result?.name).toBe("Reliance Industries Limited");
+    });
+
+    // Test 3: An unknown ISIN returns undefined
+    it("returns undefined for an unknown ISIN", () => {
+        const result = repository.findByIsin("UNKNOWN999999");
+
+        expect(result).toBeUndefined();
+    });
+
+    // Test 4: Two securities cannot have the same non-null ISIN
+    it("prevents inserting a duplicate non-null ISIN", () => {
+        const insertDuplicate = () => {
+            testDb
+                .prepare(`
+                INSERT INTO securities (name, isin)
+                VALUES (?, ?)
+            `)
+                .run("Another Security", "INE002A01018");
+        };
+
+        expect(insertDuplicate).toThrow();
+    });
+
+    // Test 5: Multiple securities can still have NULL ISIN
+    it("allows multiple securities to have NULL ISIN", () => {
+        const securities = testDb
+            .prepare(`
+            SELECT id, name, isin
+            FROM securities
+            WHERE isin IS NULL
+        `)
+            .all() as Array<{ id: number; name: string; isin: null }>;
+
+        expect(securities).toHaveLength(2);
+        expect(securities[0].isin).toBeNull();
+        expect(securities[1].isin).toBeNull();
     });
 });

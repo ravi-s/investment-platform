@@ -6,6 +6,12 @@ type SecurityRow = {
     name: string;
 };
 
+type SecurityWithIsinRow = {
+    id: number;
+    name: string;
+    isin: string;
+};
+
 type SecurityListingRow = {
     security_id: number;
     security_name: string;
@@ -67,5 +73,15 @@ export class SecurityRepository {
               AND exchanges.code = ?
         `)
             .get(securityId, exchangeCode) as SecurityListingRow | undefined;
+    }
+
+    findByIsin(isin: string) {
+        return this.db
+            .prepare(`
+            SELECT id, name, isin
+            FROM securities
+            WHERE isin = ? COLLATE NOCASE
+        `)
+            .get(isin.trim()) as SecurityWithIsinRow | undefined;
     }
 }
