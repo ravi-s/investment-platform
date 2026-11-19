@@ -145,7 +145,62 @@ describe("SecurityRepository", () => {
             .all() as Array<{ id: number; name: string; isin: null }>;
 
         expect(securities).toHaveLength(2);
-        expect(securities[0].isin).toBeNull();
-        expect(securities[1].isin).toBeNull();
+        expect(securities[0]?.isin).toBeNull();
+        expect(securities[1]?.isin).toBeNull();
+    });
+
+    describe("create()", () => {
+        // Test 1: Creating a security with a name and ISIN
+        it("creates a security with a name and ISIN", () => {
+            const created = repository.create("TCS Limited", "INE467B01029");
+
+            expect(created).toBeDefined();
+            expect(created.name).toBe("TCS Limited");
+            expect(created.isin).toBe("INE467B01029");
+            expect(created.id).toBeGreaterThan(0);
+        });
+
+        // Test 2: Retrieving the newly created security by ISIN
+        it("can retrieve a newly created security by ISIN", () => {
+            const created = repository.create("HDFC Bank Limited", "INE040A01024");
+            const found = repository.findByIsin("INE040A01024");
+
+            expect(found).toBeDefined();
+            expect(found?.id).toBe(created.id);
+            expect(found?.name).toBe("HDFC Bank Limited");
+            expect(found?.isin).toBe("INE040A01024");
+        });
+
+        // Test 3: Rejecting a duplicate ISIN through the existing unique index
+        it("rejects creating a duplicate ISIN", () => {
+            repository.create("Infosys Limited", "INE002A01015");
+
+            const createDuplicate = () => {
+                repository.create("Another Company", "INE002A01015");
+            };
+
+            expect(createDuplicate).toThrow();
+        });
+
+        // Test 4: Allowing multiple securities with NULL ISIN
+        it("allows creating multiple securities with NULL ISIN", () => {
+            const security1 = repository.create("Security Without ISIN A");
+            const security2 = repository.create("Security Without ISIN B");
+
+            expect(security1).toBeDefined();
+            expect(security1.isin).toBeNull();
+            expect(security2).toBeDefined();
+            expect(security2.isin).toBeNull();
+            expect(security1.id).not.toBe(security2.id);
+        });
+
+        // Test 5: Create with explicit NULL ISIN
+        it("allows creating a security with explicit NULL ISIN", () => {
+            const created = repository.create("No ISIN Company", null);
+
+            expect(created).toBeDefined();
+            expect(created.name).toBe("No ISIN Company");
+            expect(created.isin).toBeNull();
+        });
     });
 });

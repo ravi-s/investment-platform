@@ -25,11 +25,11 @@ export class SecurityRepository {
     findById(id: number) {
         return this.db
             .prepare(`
-                SELECT id, name
+                SELECT id, name, isin
                 FROM securities
                 WHERE id = ?
             `)
-            .get(id) as SecurityRow | undefined;
+            .get(id) as SecurityWithIsinRow | undefined;
     }
 
     findListing(exchangeCode: string, symbol: string) {
@@ -83,5 +83,16 @@ export class SecurityRepository {
             WHERE isin = ? COLLATE NOCASE
         `)
             .get(isin.trim()) as SecurityWithIsinRow | undefined;
+    }
+
+    create(name: string, isin?: string | null): SecurityWithIsinRow {
+        const result = this.db
+            .prepare(`
+            INSERT INTO securities (name, isin)
+            VALUES (?, ?)
+        `)
+            .run(name, isin ?? null);
+
+        return this.findById(result.lastInsertRowid as number) as SecurityWithIsinRow;
     }
 }
