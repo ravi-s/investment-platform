@@ -170,4 +170,57 @@ describe("TransactionImportBatchItemRepository", () => {
 
         expect(itemRepository.findByBatchId(batchId)).toEqual([]);
     });
+
+    it("creates and retrieves staged items with original source provenance", () => {
+        const items = itemRepository.createMany(batchId, [
+            {
+                source_row: 2,
+                transaction_date: "2026-05-05",
+                security_id: securityId,
+                type: "BUY",
+                quantity: 100,
+                price: 25.50,
+                source_file: "2026-tilldate.csv",
+                source_row_number: 42,
+                isin: "INF109K01W82",
+                trade_id: "TRADE123",
+                order_id: "ORDER456",
+            },
+            {
+                source_row: 3,
+                transaction_date: "2026-05-06",
+                security_id: securityId,
+                type: "BUY",
+                quantity: 50,
+                price: 26.00,
+                source_file: "2026-tilldate.csv",
+                source_row_number: 43,
+                isin: "INF109K01W82",
+                trade_id: null,
+                order_id: null,
+            },
+        ]);
+
+        expect(items).toHaveLength(2);
+
+        expect(items[0]).toMatchObject({
+            source_row: 2,
+            source_file: "2026-tilldate.csv",
+            source_row_number: 42,
+            isin: "INF109K01W82",
+            trade_id: "TRADE123",
+            order_id: "ORDER456",
+        });
+
+        expect(items[1]).toMatchObject({
+            source_row: 3,
+            source_file: "2026-tilldate.csv",
+            source_row_number: 43,
+            isin: "INF109K01W82",
+            trade_id: null,
+            order_id: null,
+        });
+
+        expect(itemRepository.findByBatchId(batchId)).toEqual(items);
+    });
 });
