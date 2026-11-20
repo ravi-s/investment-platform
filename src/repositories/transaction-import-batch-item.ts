@@ -10,6 +10,11 @@ export type TransactionImportBatchItem = {
     type: "BUY" | "SELL";
     quantity: number;
     price: number;
+    source_file: string | null;
+    source_row_number: number | null;
+    isin: string | null;
+    trade_id: string | null;
+    order_id: string | null;
 };
 
 export type NewTransactionImportBatchItem = {
@@ -19,6 +24,11 @@ export type NewTransactionImportBatchItem = {
     type: "BUY" | "SELL";
     quantity: number;
     price: number;
+    source_file: string | null;
+    source_row_number: number | null;
+    isin: string | null;
+    trade_id: string | null;
+    order_id: string | null;
 };
 
 export class TransactionImportBatchItemRepository {
@@ -41,7 +51,12 @@ export class TransactionImportBatchItemRepository {
                     security_id,
                     type,
                     quantity,
-                    price
+                    price,
+                    source_file,
+                    source_row_number,
+                    isin,
+                    trade_id,
+                    order_id
                 FROM transaction_import_batch_items
                 WHERE batch_id = ?
                 ORDER BY source_row
@@ -67,15 +82,20 @@ export class TransactionImportBatchItemRepository {
         return this.db.transaction(() => {
             const insert = this.db.prepare(`
                 INSERT INTO transaction_import_batch_items (
-                    batch_id,
-                    source_row,
-                    transaction_date,
-                    security_id,
-                    type,
-                    quantity,
-                    price
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                batch_id,
+                source_row,
+                transaction_date,
+                security_id,
+                type,
+                quantity,
+                price,
+                source_file,
+                source_row_number,
+                isin,
+                trade_id,
+                order_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
             for (const item of items) {
@@ -86,7 +106,12 @@ export class TransactionImportBatchItemRepository {
                     item.security_id,
                     item.type,
                     item.quantity,
-                    item.price
+                    item.price,
+                    item.source_file,
+                    item.source_row_number,
+                    item.isin,
+                    item.trade_id,
+                    item.order_id
                 );
             }
 

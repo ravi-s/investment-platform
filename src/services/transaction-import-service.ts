@@ -267,6 +267,11 @@ export class TransactionImportService {
                     type: transaction.type,
                     quantity: transaction.quantity,
                     price: transaction.price,
+                    source_file: null,
+                    source_row_number: index + 2,
+                    isin: null,
+                    trade_id: null,
+                    order_id: null,
                 }))
             );
 

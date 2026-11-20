@@ -13,6 +13,20 @@ describe("Transaction CSV import", () => {
     let importService: TransactionImportService;
     let userId: number;
 
+    async function readTwoValidBuyTransactionsCsv(
+        securityId: number
+    ): Promise<string> {
+        const template = await readFile(
+            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
+            "utf8"
+        );
+
+        return template.replaceAll(
+            "{{securityId}}",
+            String(securityId)
+        );
+    }
+
     beforeEach(() => {
         db = new Database(":memory:");
         db.pragma("foreign_keys = ON");
@@ -49,12 +63,10 @@ describe("Transaction CSV import", () => {
     });
 
     it("imports two valid BUY rows from a CSV file", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
-        await importService.importCsv(userId, portfolioId, csv);
+        importService.importCsv(userId, portfolioId, csv);
+
 
         const transactions = db.prepare(`
             SELECT security_id, type, quantity, price, transaction_date
@@ -104,10 +116,8 @@ describe("Transaction CSV import", () => {
 
 
     it("stages valid CSV rows without modifying transactions, holdings, or import history", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+
 
         const result = importService.stageCsv(userId, portfolioId, csv);
 
@@ -167,10 +177,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rejects staging the same CSV twice", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // First staging attempt succeeds.
         const firstResult = importService.stageCsv(
@@ -207,10 +214,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rejects staging a CSV that has already been imported", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // First, successfully import the CSV.
         const importedTransactions = importService.importCsv(
@@ -296,10 +300,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rolls back batch creation when staging items persistence fails", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // Force failure when the staged items are being persisted.
         const batchItemRepository = (importService as any)
@@ -531,10 +532,9 @@ describe("Transaction CSV import", () => {
     });
 
     it("applies a staged batch and marks it as APPLIED", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+
 
         // Stage the CSV first.
         const staged = importService.stageCsv(
@@ -615,10 +615,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rejects applying a staged batch belonging to another user", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // Create another user.
         const otherUserId = Number(
@@ -684,10 +681,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rejects reapplying an already applied batch without duplicating transactions", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // Stage and apply the batch once.
         const staged = importService.stageCsv(userId, portfolioId, csv);
@@ -770,10 +764,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rolls back transaction and holding writes when applying a staged batch fails", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         // Stage the CSV first.
         const staged = importService.stageCsv(userId, portfolioId, csv);
@@ -1153,10 +1144,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rolls back all changes when a staged batch cannot transition to APPLIED", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
 
         const staged = importService.stageCsv(userId, portfolioId, csv);
         const batchRepository = (importService as any)
@@ -1225,10 +1213,8 @@ describe("Transaction CSV import", () => {
     });
 
     it("successfully applies a staged batch after a failed application", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+
 
         const staged = importService.stageCsv(userId, portfolioId, csv);
         const batchRepository = (importService as any)

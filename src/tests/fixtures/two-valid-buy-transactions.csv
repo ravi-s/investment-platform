@@ -1,3 +1,3 @@
 transactionDate,securityId,type,quantity,price
-2026-10-01,1,BUY,10,2500
-2026-10-03,1,BUY,5,2550
+2026-10-01,{{securityId}},BUY,10,2500
+2026-10-03,{{securityId}},BUY,5,2550
