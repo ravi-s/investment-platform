@@ -6,6 +6,7 @@ import { InvestmentEventRepository } from "../repositories/investment-event.js";
 describe("InvestmentEventRepository", () => {
     let testDb: Database.Database;
     let repository: InvestmentEventRepository;
+    let relianceSecurityId: number;
 
 
     beforeAll(() => {
@@ -16,15 +17,17 @@ describe("InvestmentEventRepository", () => {
 
         const security = testDb
             .prepare(`
-            INSERT INTO securities(name)
-    VALUES(?)
-        `)
+                INSERT INTO securities(name)
+                VALUES(?)
+            `)
             .run("Reliance Industries Limited");
+
+        relianceSecurityId = Number(security.lastInsertRowid);
 
         repository = new InvestmentEventRepository(testDb);
 
         repository.create(
-            Number(security.lastInsertRowid),
+            relianceSecurityId,
             "DIVIDEND",
             "2026-09-10",
             "2026-09-11",
@@ -43,7 +46,7 @@ describe("InvestmentEventRepository", () => {
 
         expect(result).toBeDefined();
         expect(result?.id).toBe(1);
-        expect(result?.security_id).toBe(1);
+        expect(result?.security_id).toBe(relianceSecurityId);
         expect(result?.event_type).toBe("DIVIDEND");
         expect(result?.ex_date).toBe("2026-09-10");
         expect(result?.record_date).toBe("2026-09-11");
@@ -107,7 +110,7 @@ describe("InvestmentEventRepository", () => {
                 transaction_date
             )
             VALUES (?, ?, 'BUY', 10, 100, '2026-09-01')
-        `).run(portfolioId, 1);
+        `).run(portfolioId, relianceSecurityId);
         testDb.prepare(`
             INSERT INTO transactions (
                 portfolio_id,
@@ -118,7 +121,7 @@ describe("InvestmentEventRepository", () => {
                 transaction_date
             )
             VALUES (?, ?, 'BUY', 5, 110, '2026-09-03')
-        `).run(portfolioId, 1);
+        `).run(portfolioId, relianceSecurityId);
         testDb.prepare(`
             INSERT INTO transactions (
                 portfolio_id,
@@ -134,7 +137,7 @@ describe("InvestmentEventRepository", () => {
         const events = repository.findDividendEventsByPortfolioId(portfolioId);
 
         expect(events.map((event) => event.security_id)).toEqual([
-            1,
+            relianceSecurityId,
             otherSecurityId,
         ]);
         expect(events.map((event) => event.event_type)).toEqual([
@@ -146,7 +149,7 @@ describe("InvestmentEventRepository", () => {
     it("rejects a non-positive dividend amount", () => {
         expect(() =>
             repository.create(
-                1,
+                relianceSecurityId,
                 "DIVIDEND",
                 "2026-10-01",
                 "2026-10-02",
@@ -160,7 +163,7 @@ describe("InvestmentEventRepository", () => {
     it("rejects a record date before the ex-date", () => {
         expect(() =>
             repository.create(
-                1,
+                relianceSecurityId,
                 "DIVIDEND",
                 "2026-10-10",
                 "2026-10-09",
@@ -174,7 +177,7 @@ describe("InvestmentEventRepository", () => {
     it("rejects a payment date before the ex-date", () => {
         expect(() =>
             repository.create(
-                1,
+                relianceSecurityId,
                 "DIVIDEND",
                 "2026-10-10",
                 "2026-10-11",
