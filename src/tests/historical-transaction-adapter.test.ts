@@ -40,9 +40,9 @@ describe("HistoricalTransactionAdapter", () => {
 
     it("maps historical rows by ISIN and preserves transaction provenance", () => {
         const csv = [
-            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number",
-            "INF846K01CX4,2026-05-05,buy,10.5,25.1234,10001,20001,2026-tilldate.csv,14",
-            "INF846K01CX4,2026-05-05,buy,10.5,25.1234,10002,20002,2026-tilldate.csv,15",
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-05,buy,10.5,25.1234,10001,20001,2026-tilldate.csv,14,10.5,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            "INF846K01CX4,2026-05-05,buy,10.5,25.1234,10002,20002,2026-tilldate.csv,15,10.5,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
         ].join("\n");
 
         const rows = adapter.adapt(csv);
@@ -80,8 +80,8 @@ describe("HistoricalTransactionAdapter", () => {
 
     it("accepts rows where broker identifiers are absent", () => {
         const csv = [
-            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number",
-            "INF846K01CX4,2026-05-06,sell,2,26.5,,,2019.csv,8",
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-06,sell,2,26.5,,,2019.csv,8,-2,CURRENT_HOLDINGS_ISIN",
         ].join("\n");
 
         const rows = adapter.adapt(csv);
@@ -99,10 +99,48 @@ describe("HistoricalTransactionAdapter", () => {
 
     it("rejects an ISIN that has no matching security", () => {
         const csv = [
-            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number",
-            "INF000000000,2026-05-05,buy,10,25,10001,20001,2019.csv,8",
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF000000000,2026-05-05,buy,10,25,10001,20001,2019.csv,8,10,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
         ].join("\n");
 
         expect(() => adapter.adapt(csv)).toThrow(/ISIN/i);
+    });
+
+    it("accepts all validation flags present in the consolidated dataset", () => {
+        const csv = [
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-05,buy,10,25,10001,20001,2019.csv,8,10,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            "INF846K01CX4,2026-05-06,sell,2,26,10002,20002,2019.csv,9,-2,COMPLETE_CALENDAR_YEAR_EXPORT",
+            "INF846K01CX4,2026-05-07,buy,5,27,10003,20003,2026.csv,10,5,CURRENT_HOLDINGS_ISIN",
+        ].join("\n");
+
+        expect(adapter.adapt(csv)).toHaveLength(3);
+    });
+
+    it("rejects signed units with an incorrect sign", () => {
+        const csv = [
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-05,buy,10,25,10001,20001,2019.csv,8,-10,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+        ].join("\n");
+
+        expect(() => adapter.adapt(csv)).toThrow(/signed_units/i);
+    });
+
+    it("rejects signed units that do not match the transaction quantity", () => {
+        const csv = [
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-05,buy,10,25,10001,20001,2019.csv,8,9,MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+        ].join("\n");
+
+        expect(() => adapter.adapt(csv)).toThrow(/signed_units/i);
+    });
+
+    it("rejects an unrecognized validation flag", () => {
+        const csv = [
+            "isin,trade_date,trade_type,quantity,price,trade_id,order_id,source_file,source_row_number,signed_units,validation_flag",
+            "INF846K01CX4,2026-05-05,buy,10,25,10001,20001,2019.csv,8,10,UNKNOWN_FLAG",
+        ].join("\n");
+
+        expect(() => adapter.adapt(csv)).toThrow(/validation_flag/i);
     });
 });

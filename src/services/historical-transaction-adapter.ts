@@ -26,6 +26,8 @@ type HistoricalCsvRow = {
     order_id: string;
     source_file: string;
     source_row_number: string;
+    signed_units: string;
+    validation_flag: string;
 };
 
 export class HistoricalTransactionAdapter {
@@ -64,6 +66,37 @@ export class HistoricalTransactionAdapter {
             }
 
             const quantity = Number(row.quantity);
+            const signedUnits = Number(row.signed_units);
+
+            if (
+                !Number.isFinite(signedUnits) ||
+                Math.abs(Math.abs(signedUnits) - quantity) > 1e-9
+            ) {
+                throw new Error(
+                    `Invalid signed_units at CSV row ${index + 2}`
+                );
+            }
+
+            const expectedSign = transactionType === "buy" ? 1 : -1;
+
+            if (Math.sign(signedUnits) !== expectedSign) {
+                throw new Error(
+                    `Invalid signed_units sign at CSV row ${index + 2}`
+                );
+            }
+
+            const allowedValidationFlags = new Set([
+                "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+                "COMPLETE_CALENDAR_YEAR_EXPORT",
+                "CURRENT_HOLDINGS_ISIN",
+            ]);
+
+            if (!allowedValidationFlags.has(row.validation_flag?.trim())) {
+                throw new Error(
+                    `Invalid validation_flag at CSV row ${index + 2}`
+                );
+            }
+
             const price = Number(row.price);
             const sourceRowNumber = Number(row.source_row_number);
 
