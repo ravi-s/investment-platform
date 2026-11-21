@@ -2,6 +2,9 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { runMigrations } from "../db/migration-runner.js";
 import { SecurityRepository } from "../repositories/security.js";
 import { HistoricalTransactionAdapter } from "../services/historical-transaction-adapter.js";
@@ -142,5 +145,43 @@ describe("HistoricalTransactionAdapter", () => {
         ].join("\n");
 
         expect(() => adapter.adapt(csv)).toThrow(/validation_flag/i);
+    });
+
+
+    it("adapts the complete consolidated historical dataset", () => {
+        const csvPath = resolve(
+            process.cwd(),
+            "src/tests/fixtures/consolidated_current_holdings_transactions_2018_2026.csv"
+        );
+
+        const csv = readFileSync(csvPath, "utf-8");
+
+        const rows = adapter.adapt(csv);
+
+        // Total transaction count
+        expect(rows).toHaveLength(477);
+
+        // Transaction type distribution
+        expect(rows.filter(row => row.type === "BUY")).toHaveLength(396);
+        expect(rows.filter(row => row.type === "SELL")).toHaveLength(81);
+
+        // All ten currently held schemes must be mapped.
+        expect(new Set(rows.map(row => row.isin)).size).toBe(10);
+
+        // Every consolidated CSV row must retain its source position.
+        expect(rows.map(row => row.sourceRow)).toEqual(
+            Array.from({ length: 477 }, (_, index) => index + 2)
+        );
+
+        // Both distinct ICICI purchases on May 5 must be retained.
+        const iciciPurchases = rows.filter(row =>
+            row.isin === "INF109K01W82" &&
+            row.transactionDate === "2026-05-05" &&
+            row.type === "BUY" &&
+            row.quantity === 71.157 &&
+            row.price === 70.2634
+        );
+
+        expect(iciciPurchases).toHaveLength(2);
     });
 });
