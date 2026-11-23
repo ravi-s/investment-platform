@@ -24,11 +24,11 @@ export type NewTransactionImportBatchItem = {
     type: "BUY" | "SELL";
     quantity: number;
     price: number;
-    source_file: string | null;
-    source_row_number: number | null;
-    isin: string | null;
-    trade_id: string | null;
-    order_id: string | null;
+    source_file?: string | null;
+    source_row_number?: number | null;
+    isin?: string | null;
+    trade_id?: string | null;
+    order_id?: string | null;
 };
 
 export class TransactionImportBatchItemRepository {
@@ -107,11 +107,11 @@ export class TransactionImportBatchItemRepository {
                     item.type,
                     item.quantity,
                     item.price,
-                    item.source_file,
-                    item.source_row_number,
-                    item.isin,
-                    item.trade_id,
-                    item.order_id
+                    item.source_file ?? null,
+                    item.source_row_number ?? null,
+                    item.isin ?? null,
+                    item.trade_id ?? null,
+                    item.order_id ?? null
                 );
             }
 

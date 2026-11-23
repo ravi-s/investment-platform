@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runMigrations } from "../db/migration-runner.ts";
-import { TransactionImportBatchItemRepository } from "../repositories/transaction-import-batch-item.js";
+import { TransactionImportBatchItemRepository } from "../repositories/transaction-import-batch-item.ts";
 import { TransactionImportBatchRepository } from "../repositories/transaction-batch-import.ts";
 
 describe("TransactionImportBatchItemRepository", () => {
@@ -65,6 +65,11 @@ describe("TransactionImportBatchItemRepository", () => {
                 type: "BUY",
                 quantity: 5,
                 price: 2550,
+                source_file: null,
+                source_row_number: null,
+                isin: null,
+                trade_id: null,
+                order_id: null,
             },
             {
                 source_row: 2,
@@ -73,6 +78,11 @@ describe("TransactionImportBatchItemRepository", () => {
                 type: "BUY",
                 quantity: 10,
                 price: 2500,
+                source_file: null,
+                source_row_number: null,
+                isin: null,
+                trade_id: null,
+                order_id: null,
             },
         ]);
 
@@ -118,6 +128,11 @@ describe("TransactionImportBatchItemRepository", () => {
                     type: "BUY",
                     quantity: 10,
                     price: 2500,
+                    source_file: null,
+                    source_row_number: null,
+                    isin: null,
+                    trade_id: null,
+                    order_id: null,
                 },
                 {
                     source_row: 2,
@@ -126,6 +141,11 @@ describe("TransactionImportBatchItemRepository", () => {
                     type: "BUY",
                     quantity: 5,
                     price: 2550,
+                    source_file: null,
+                    source_row_number: null,
+                    isin: null,
+                    trade_id: null,
+                    order_id: null,
                 },
             ])
         ).toThrow();
@@ -143,6 +163,11 @@ describe("TransactionImportBatchItemRepository", () => {
                     type: "BUY",
                     quantity: 10,
                     price: 2500,
+                    source_file: null,
+                    source_row_number: null,
+                    isin: null,
+                    trade_id: null,
+                    order_id: null,
                 },
             ])
         ).toThrow();
@@ -164,6 +189,11 @@ describe("TransactionImportBatchItemRepository", () => {
                     type: "BUY",
                     quantity: 10,
                     price: 2500,
+                    source_file: null,
+                    source_row_number: null,
+                    isin: null,
+                    trade_id: null,
+                    order_id: null,
                 },
             ])
         ).toThrow();
