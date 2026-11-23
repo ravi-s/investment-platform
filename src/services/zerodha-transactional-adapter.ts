@@ -1,6 +1,6 @@
 import { parse } from "csv-parse/sync";
-import { DateOnlySchema } from "../schema/date.js";
-import { SecurityRepository } from "../repositories/security.js";
+import { DateOnlySchema } from "../schema/date.ts";
+import { SecurityRepository } from "../repositories/security.ts";
 
 export type AdaptedHistoricalTransaction = {
     sourceRow: number;
@@ -30,7 +30,7 @@ type HistoricalCsvRow = {
     validation_flag: string;
 };
 
-export class HistoricalTransactionAdapter {
+export class ZerodhaTransactionAdapter {
     constructor(
         private readonly securityRepository: SecurityRepository
     ) { }

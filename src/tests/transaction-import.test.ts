@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runMigrations } from "../db/migration-runner.js";
-import { TransactionImportService } from "../services/transaction-import-service.js";
+import { runMigrations } from "../db/migration-runner.ts";
+import { TransactionImportService } from "../services/transaction-import-service.ts";
 
-import { HistoricalTransactionAdapter } from "../services/historical-transaction-adapter.js";
-import { SecurityRepository } from "../repositories/security.js";
+import { ZerodhaTransactionAdapter } from "../services/zerodha-transactional-adapter.ts";
+import { SecurityRepository } from "../repositories/security.ts";
 
 describe("Transaction CSV import", () => {
     let db: Database.Database;
@@ -28,6 +28,52 @@ describe("Transaction CSV import", () => {
             "{{securityId}}",
             String(securityId)
         );
+    }
+
+    function twoValidZerodhaTransactionsCsv(): string {
+        return [
+            [
+                "symbol", "isin", "trade_date", "exchange", "segment", "series",
+                "trade_type", "auction", "quantity", "price", "trade_id",
+                "order_id", "order_execution_time", "source_file",
+                "source_row_number", "signed_units", "validation_flag",
+            ].join(","),
+            [
+                "TEST", "INE000A01011", "2026-10-01", "NSE", "CASH", "EQ",
+                "buy", "false", "10", "2500", "trade-001", "order-001",
+                "2026-10-01 10:00:00", "zerodha-test.csv", "14", "10",
+                "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            ].join(","),
+            [
+                "TEST", "INE000A01011", "2026-10-03", "NSE", "CASH", "EQ",
+                "buy", "false", "5", "2550", "trade-002", "order-002",
+                "2026-10-03 10:00:00", "zerodha-test.csv", "22", "5",
+                "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            ].join(","),
+        ].join("\n");
+    }
+
+    function zerodhaBuyThenSellCsv(): string {
+        return [
+            [
+                "symbol", "isin", "trade_date", "exchange", "segment", "series",
+                "trade_type", "auction", "quantity", "price", "trade_id",
+                "order_id", "order_execution_time", "source_file",
+                "source_row_number", "signed_units", "validation_flag",
+            ].join(","),
+            [
+                "TEST", "INE000A01011", "2026-10-01", "NSE", "CASH", "EQ",
+                "buy", "false", "10", "2500", "trade-001", "order-001",
+                "2026-10-01 10:00:00", "zerodha-test.csv", "14", "10",
+                "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            ].join(","),
+            [
+                "TEST", "INE000A01011", "2026-10-03", "NSE", "CASH", "EQ",
+                "sell", "false", "11", "2550", "trade-002", "order-002",
+                "2026-10-03 10:00:00", "zerodha-test.csv", "22", "-11",
+                "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+            ].join(","),
+        ].join("\n");
     }
 
     beforeEach(() => {
@@ -53,9 +99,9 @@ describe("Transaction CSV import", () => {
 
         securityId = Number(
             db.prepare(`
-        INSERT INTO securities (name)
-        VALUES (?)
-    `).run("Import Test Security").lastInsertRowid
+                INSERT INTO securities (name, isin)
+                VALUES (?, ?)
+            `).run("Import Test Security", "INE000A01011").lastInsertRowid
         );
 
         importService = new TransactionImportService(db);
@@ -119,7 +165,7 @@ describe("Transaction CSV import", () => {
 
 
     it("stages valid CSV rows without modifying transactions, holdings, or import history", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
 
         const result = importService.stageCsv(userId, portfolioId, csv);
@@ -138,6 +184,11 @@ describe("Transaction CSV import", () => {
         expect(result.items).toMatchObject([
             {
                 source_row: 2,
+                source_file: "zerodha-test.csv",
+                source_row_number: 14,
+                isin: "INE000A01011",
+                trade_id: "trade-001",
+                order_id: "order-001",
                 transaction_date: "2026-10-01",
                 security_id: securityId,
                 type: "BUY",
@@ -146,6 +197,11 @@ describe("Transaction CSV import", () => {
             },
             {
                 source_row: 3,
+                source_file: "zerodha-test.csv",
+                source_row_number: 22,
+                isin: "INE000A01011",
+                trade_id: "trade-002",
+                order_id: "order-002",
                 transaction_date: "2026-10-03",
                 security_id: securityId,
                 type: "BUY",
@@ -180,7 +236,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rejects staging the same CSV twice", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // First staging attempt succeeds.
         const firstResult = importService.stageCsv(
@@ -216,48 +272,48 @@ describe("Transaction CSV import", () => {
         expect(items).toHaveLength(2);
     });
 
-    it("rejects staging a CSV that has already been imported", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+    it("rejects staging a Zerodha CSV that has already been imported", () => {
+        const csv = twoValidZerodhaTransactionsCsv();
+        const contentHash = createHash("sha256").update(csv).digest("hex");
 
-        // First, successfully import the CSV.
-        const importedTransactions = importService.importCsv(
-            userId,
-            portfolioId,
-            csv
-        );
+        db.prepare(`
+            INSERT INTO transaction_imports (
+                user_id,
+                portfolio_id,
+                content_hash
+            )
+            VALUES (?, ?, ?)
+        `).run(userId, portfolioId, contentHash);
 
-        expect(importedTransactions).toHaveLength(2);
-
-        // Attempt to stage the same CSV.
         expect(() =>
             importService.stageCsv(userId, portfolioId, csv)
-        ).toThrow();
+        ).toThrow("CSV file has already been imported or staged");
 
-        // No staging batch should have been created.
-        const batches = db.prepare(`
-        SELECT id
-        FROM transaction_import_batches
-        WHERE user_id = ? AND portfolio_id = ?
-    `).all(userId, portfolioId);
+        expect(
+            db.prepare(`
+                SELECT id
+                FROM transaction_import_batches
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+        ).toEqual([]);
 
-        expect(batches).toHaveLength(0);
-
-        // The original imported transactions remain intact.
-        const transactions = db.prepare(`
-        SELECT id
-        FROM transactions
-        WHERE portfolio_id = ?
-    `).all(portfolioId);
-
-        expect(transactions).toHaveLength(2);
+        expect(
+            db.prepare(`
+                SELECT user_id, portfolio_id, content_hash
+                FROM transaction_imports
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+        ).toEqual([
+            {
+                user_id: userId,
+                portfolio_id: portfolioId,
+                content_hash: contentHash,
+            },
+        ]);
     });
 
-
     it("rejects staging a CSV into a portfolio owned by another user", async () => {
-        const csv = await readFile(
-            new URL("./fixtures/two-valid-buy-transactions.csv", import.meta.url),
-            "utf8"
-        );
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // Create another user.
         const otherUser = db.prepare(`
@@ -303,7 +359,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rolls back batch creation when staging items persistence fails", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // Force failure when the staged items are being persisted.
         const batchItemRepository = (importService as any)
@@ -485,7 +541,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rejects staging a header-only CSV without creating a batch", () => {
-        const csv = "transactionDate,securityId,type,quantity,price";
+        const csv = "symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time,source_file,source_row_number,signed_units,validation_flag";
 
         expect(() =>
             importService.stageCsv(userId, portfolioId, csv)
@@ -536,7 +592,7 @@ describe("Transaction CSV import", () => {
 
     it("applies a staged batch and marks it as APPLIED", async () => {
 
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
 
         // Stage the CSV first.
@@ -618,7 +674,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rejects applying a staged batch belonging to another user", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // Create another user.
         const otherUserId = Number(
@@ -684,7 +740,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rejects reapplying an already applied batch without duplicating transactions", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // Stage and apply the batch once.
         const staged = importService.stageCsv(userId, portfolioId, csv);
@@ -767,7 +823,7 @@ describe("Transaction CSV import", () => {
 
 
     it("rolls back transaction and holding writes when applying a staged batch fails", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         // Stage the CSV first.
         const staged = importService.stageCsv(userId, portfolioId, csv);
@@ -1091,11 +1147,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rolls back all changes when applying a staged batch encounters insufficient holdings", () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-            `2026-10-03,${securityId},SELL,11,2550`,
-        ].join("\n");
+        const csv = zerodhaBuyThenSellCsv();
 
         const staged = importService.stageCsv(userId, portfolioId, csv);
 
@@ -1147,7 +1199,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("rolls back all changes when a staged batch cannot transition to APPLIED", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
         const staged = importService.stageCsv(userId, portfolioId, csv);
         const batchRepository = (importService as any)
@@ -1216,7 +1268,7 @@ describe("Transaction CSV import", () => {
     });
 
     it("successfully applies a staged batch after a failed application", async () => {
-        const csv = await readTwoValidBuyTransactionsCsv(securityId);
+        const csv = twoValidZerodhaTransactionsCsv();
 
 
         const staged = importService.stageCsv(userId, portfolioId, csv);
@@ -1331,7 +1383,7 @@ describe("Transaction CSV import", () => {
         }
     });
 
-    it("stages all 477 historical transactions with complete provenance", async () => {
+    it("stages all 477 Zerodha transactions with complete provenance", async () => {
         const csv = await readFile(
             new URL(
                 "./fixtures/consolidated_current_holdings_transactions_2018_2026.csv",
@@ -1341,15 +1393,15 @@ describe("Transaction CSV import", () => {
         );
 
         // Use the real adapter to establish the expected adapted records.
-        const adapter = new HistoricalTransactionAdapter(
+        const adapter = new ZerodhaTransactionAdapter(
             new SecurityRepository(db)
         );
         const adaptedTransactions = adapter.adapt(csv);
 
         expect(adaptedTransactions).toHaveLength(477);
 
-        // Stage through the historical staging service.
-        const result = importService.stageHistoricalTransactions(
+        // Stage through the shared CSV staging workflow.
+        const result = importService.stageCsv(
             userId,
             portfolioId,
             csv

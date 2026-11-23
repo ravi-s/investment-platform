@@ -10,7 +10,7 @@ import { DateOnlySchema } from "../schema/date.js";
 import { TransactionService } from "./transaction.js";
 
 import { SecurityRepository } from "../repositories/security.js";
-import { HistoricalTransactionAdapter } from "./historical-transaction-adapter.js";
+import { ZerodhaTransactionAdapter } from "./zerodha-transactional-adapter.ts";
 
 type TransactionType = "BUY" | "SELL";
 
@@ -224,85 +224,21 @@ export class TransactionImportService {
     }
 
     /**
-     * Validates and persists a CSV as a staged import batch without creating
+     * Adapts and persists historical transactions as a staged import batch.
+     * Preserves the original source provenance without creating financial
      * transactions or recording the file in import history.
      */
     stageCsv(userId: number, portfolioId: number, csv: string) {
         return this.db.transaction(() => {
             const portfolio = this.portfolioRepository.findById(portfolioId);
-            if (!portfolio || portfolio.user_id !== userId) {
-                throw new Error("Portfolio not found");
-            }
-
-            const transactions = this.parseAndValidateCsv(csv);
-
-            if (transactions.length === 0) {
-                throw new Error("CSV contains no transactions to stage");
-            }
-            const contentHash = createHash("sha256").update(csv).digest("hex");
-
-            if (
-                this.importHistoryRepository.exists(
-                    userId,
-                    portfolioId,
-                    contentHash
-                ) ||
-                this.transactionImportBatchRepository.exists(
-                    userId,
-                    portfolioId,
-                    contentHash
-                )
-            ) {
-                throw new Error("CSV file has already been imported or staged");
-            }
-
-            const batch = this.transactionImportBatchRepository.create(
-                userId,
-                portfolioId,
-                contentHash
-            );
-            const items = this.transactionImportBatchItemRepository.createMany(
-                batch.id,
-                transactions.map((transaction, index) => ({
-                    source_row: index + 2,
-                    transaction_date: transaction.transactionDate,
-                    security_id: transaction.securityId,
-                    type: transaction.type,
-                    quantity: transaction.quantity,
-                    price: transaction.price,
-                    source_file: null,
-                    source_row_number: index + 2,
-                    isin: null,
-                    trade_id: null,
-                    order_id: null,
-                }))
-            );
-
-            return { batch, items };
-        })();
-    }
-
-    /**
-     * Adapts and persists historical transactions as a staged import batch.
-     * Preserves the original source provenance without creating financial
-     * transactions or recording the file in import history.
-     */
-    stageHistoricalTransactions(
-        userId: number,
-        portfolioId: number,
-        csv: string
-    ) {
-        return this.db.transaction(() => {
-            const portfolio = this.portfolioRepository.findById(portfolioId);
 
             if (!portfolio || portfolio.user_id !== userId) {
                 throw new Error("Portfolio not found");
             }
 
-            const adapter = new HistoricalTransactionAdapter(
+            const adapter = new ZerodhaTransactionAdapter(
                 new SecurityRepository(this.db)
             );
-
             const transactions = adapter.adapt(csv);
 
             if (transactions.length === 0) {

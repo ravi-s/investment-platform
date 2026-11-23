@@ -7,12 +7,12 @@ import { resolve } from "node:path";
 
 import { runMigrations } from "../db/migration-runner.js";
 import { SecurityRepository } from "../repositories/security.js";
-import { HistoricalTransactionAdapter } from "../services/historical-transaction-adapter.js";
+import { ZerodhaTransactionAdapter } from "../services/zerodha-transactional-adapter.ts";
 
 describe("HistoricalTransactionAdapter", () => {
     let testDb: Database.Database;
     let securityId: number;
-    let adapter: HistoricalTransactionAdapter;
+    let adapter: ZerodhaTransactionAdapter;
 
     beforeEach(() => {
         testDb = new Database(":memory:");
@@ -32,7 +32,7 @@ describe("HistoricalTransactionAdapter", () => {
         securityId = security.id;
 
 
-        adapter = new HistoricalTransactionAdapter(
+        adapter = new ZerodhaTransactionAdapter(
             securityRepository
         );
     });
