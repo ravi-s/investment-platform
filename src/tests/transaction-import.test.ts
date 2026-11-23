@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runMigrations } from "../db/migration-runner.js";
 import { TransactionImportService } from "../services/transaction-import-service.js";
 
+import { HistoricalTransactionAdapter } from "../services/historical-transaction-adapter.js";
+import { SecurityRepository } from "../repositories/security.js";
+
 describe("Transaction CSV import", () => {
     let db: Database.Database;
     let portfolioId: number;
@@ -1326,6 +1329,117 @@ describe("Transaction CSV import", () => {
         } finally {
             transitionSpy.mockRestore();
         }
+    });
+
+    it("stages all 477 historical transactions with complete provenance", async () => {
+        const csv = await readFile(
+            new URL(
+                "./fixtures/consolidated_current_holdings_transactions_2018_2026.csv",
+                import.meta.url
+            ),
+            "utf8"
+        );
+
+        // Use the real adapter to establish the expected adapted records.
+        const adapter = new HistoricalTransactionAdapter(
+            new SecurityRepository(db)
+        );
+        const adaptedTransactions = adapter.adapt(csv);
+
+        expect(adaptedTransactions).toHaveLength(477);
+
+        // Stage through the historical staging service.
+        const result = importService.stageHistoricalTransactions(
+            userId,
+            portfolioId,
+            csv
+        );
+
+        expect(result.batch).toMatchObject({
+            user_id: userId,
+            portfolio_id: portfolioId,
+            content_hash: createHash("sha256").update(csv).digest("hex"),
+            status: "STAGED",
+        });
+
+        expect(result.items).toHaveLength(477);
+
+        // Verify transaction type counts.
+        expect(result.items.filter(item => item.type === "BUY")).toHaveLength(396);
+        expect(result.items.filter(item => item.type === "SELL")).toHaveLength(81);
+
+        // Verify all five provenance fields and source-row positioning.
+        expect(
+            result.items.map(item => ({
+                source_row: item.source_row,
+                source_file: item.source_file,
+                source_row_number: item.source_row_number,
+                isin: item.isin,
+                trade_id: item.trade_id,
+                order_id: item.order_id,
+            }))
+        ).toEqual(
+            adaptedTransactions.map(transaction => ({
+                source_row: transaction.sourceRow,
+                source_file: transaction.sourceFile,
+                source_row_number: transaction.sourceRowNumber,
+                isin: transaction.isin,
+                trade_id: transaction.tradeId,
+                order_id: transaction.orderId,
+            }))
+        );
+
+        // Both distinct ICICI purchases on 2026-05-05 must survive staging.
+        const iciciPurchases = result.items.filter(item =>
+            item.transaction_date === "2026-05-05" &&
+            item.isin === "INF109K01W82" &&
+            item.type === "BUY" &&
+            item.quantity === 71.157 &&
+            item.price === 70.2634
+        );
+
+        expect(iciciPurchases).toHaveLength(2);
+        expect(new Set(iciciPurchases.map(item => item.source_row)).size).toBe(2);
+
+        // Verify exactly one staged batch and 477 persisted items.
+        expect(
+            db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transaction_import_batches
+            WHERE user_id = ? AND portfolio_id = ?
+        `).get(userId, portfolioId)
+        ).toEqual({ count: 1 });
+
+        expect(
+            db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM transaction_import_batch_items
+            WHERE batch_id = ?
+        `).get(result.batch.id)
+        ).toEqual({ count: 477 });
+
+        // Staging must not create financial transactions.
+        expect(
+            db.prepare(`
+            SELECT id FROM transactions WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        // Staging must not create holdings.
+        expect(
+            db.prepare(`
+            SELECT id FROM holdings WHERE portfolio_id = ?
+        `).all(portfolioId)
+        ).toEqual([]);
+
+        // Staging must not register an applied import.
+        expect(
+            db.prepare(`
+            SELECT id
+            FROM transaction_imports
+            WHERE user_id = ? AND portfolio_id = ?
+        `).all(userId, portfolioId)
+        ).toEqual([]);
     });
 
 });
