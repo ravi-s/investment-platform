@@ -1440,6 +1440,28 @@ describe("Transaction CSV import", () => {
             WHERE user_id = ? AND portfolio_id = ?
         `).all(userId, portfolioId)
         ).toEqual([]);
-    });
 
+        const provenanceCounts = db.prepare(`
+            SELECT
+                COUNT(*) AS total_items,
+                SUM(type = 'BUY') AS buy_count,
+                SUM(type = 'SELL') AS sell_count,
+                SUM(source_file IS NOT NULL) AS with_source_file,
+                SUM(source_row_number IS NOT NULL) AS with_source_row,
+                SUM(isin IS NOT NULL) AS with_isin,
+                SUM(trade_id IS NOT NULL) AS with_trade_id,
+                SUM(order_id IS NOT NULL) AS with_order_id
+            FROM transaction_import_batch_items
+            WHERE batch_id = ?
+        `).get(result.batch.id);
+
+        expect(provenanceCounts).toMatchObject({
+            total_items: 477,
+            buy_count: 396,
+            sell_count: 81,
+            with_source_file: 477,
+            with_source_row: 477,
+            with_isin: 477,
+        });
+    });
 });
