@@ -5,12 +5,71 @@ import Database from "better-sqlite3";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { transactionRoutes } from "../routes/transaction.js";
+import { transactionRoutes } from "../routes/transaction.ts";
 import { runMigrations } from "../db/migration-runner.ts";
-import { TransactionService } from "../services/transaction.js";
-import { SessionService } from "../services/session.js";
-import { SessionRepository } from "../repositories/session.js";
-import { TransactionImportService } from "../services/transaction-import-service.js";
+import { TransactionService } from "../services/transaction.ts";
+import { SessionService } from "../services/session.ts";
+import { SessionRepository } from "../repositories/session.ts";
+import { TransactionImportService } from "../services/transaction-import-service.ts";
+
+const ZERODHA_CSV_HEADER = [
+    "symbol",
+    "isin",
+    "trade_date",
+    "exchange",
+    "segment",
+    "series",
+    "trade_type",
+    "auction",
+    "quantity",
+    "price",
+    "trade_id",
+    "order_id",
+    "order_execution_time",
+    "source_file",
+    "source_row_number",
+    "signed_units",
+    "validation_flag",
+].join(",");
+
+type ZerodhaTestTransaction = {
+    date: string;
+    type: "BUY" | "SELL";
+    quantity: number;
+    price: number;
+    sourceRowNumber: number;
+};
+
+function createZerodhaCsv(transactions: ZerodhaTestTransaction[]): string {
+    const rows = transactions.map((transaction, index) => {
+        const signedUnits =
+            transaction.type === "BUY"
+                ? transaction.quantity
+                : -transaction.quantity;
+
+        return [
+            "ROUTE",
+            "INE000A01011",
+            transaction.date,
+            "NSE",
+            "CASH",
+            "EQ",
+            transaction.type,
+            "",
+            transaction.quantity,
+            transaction.price,
+            `trade-${index + 1}`,
+            `order-${index + 1}`,
+            `${transaction.date} 10:00:00`,
+            "route-test.csv",
+            transaction.sourceRowNumber,
+            signedUnits,
+            "MATCHED_TO_ORIGINAL_ANNUAL_EXPORTS",
+        ].join(",");
+    });
+
+    return [ZERODHA_CSV_HEADER, ...rows].join("\n");
+}
 
 describe("Transaction routes", () => {
     let app: FastifyInstance;
@@ -42,9 +101,9 @@ describe("Transaction routes", () => {
 
         securityId = Number(
             db.prepare(`
-                INSERT INTO securities (name)
-                VALUES (?)
-            `).run("Route Security").lastInsertRowid
+                INSERT INTO securities (name, isin)
+                VALUES (?, ?)
+            `).run("Route Security", "INE000A01011").lastInsertRowid
         );
 
         service = new TransactionService(db);
@@ -1219,10 +1278,15 @@ describe("Transaction routes", () => {
     });
 
     it("stages valid CSV through the API without creating transactions", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+        ]);
 
         const response = await injectAuthenticated({
             method: "POST",
@@ -1248,11 +1312,22 @@ describe("Transaction routes", () => {
     });
 
     it("retrieves staged batch details and items through the API", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-            `2026-10-05,${securityId},BUY,5,2600`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+            {
+                date: "2026-10-05",
+                type: "BUY",
+                quantity: 5,
+                price: 2600,
+                sourceRowNumber: 22,
+            },
+        ]);
 
         // Arrange: stage the CSV first
         const stageResponse = await injectAuthenticated({
@@ -1315,10 +1390,15 @@ describe("Transaction routes", () => {
     `).run("Other Import User", "other-import@example.com");
 
         const otherUserId = Number(result.lastInsertRowid);
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+        ]);
 
         // Stage a batch as the portfolio owner.
         const stageResponse = await injectAuthenticated({
@@ -1350,11 +1430,22 @@ describe("Transaction routes", () => {
     });
 
     it("applies a staged batch and marks it as APPLIED", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-            `2026-10-05,${securityId},BUY,5,2600`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+            {
+                date: "2026-10-05",
+                type: "BUY",
+                quantity: 5,
+                price: 2600,
+                sourceRowNumber: 22,
+            },
+        ]);
 
         const stageResponse = await injectAuthenticated({
             method: "POST",
@@ -1378,11 +1469,22 @@ describe("Transaction routes", () => {
 
 
     it("rejects applying an already-applied staged batch", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-            `2026-10-05,${securityId},BUY,5,2600`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+            {
+                date: "2026-10-05",
+                type: "BUY",
+                quantity: 5,
+                price: 2600,
+                sourceRowNumber: 22,
+            },
+        ]);
 
         // Arrange: stage the CSV
         const stageResponse = await injectAuthenticated({
@@ -1429,10 +1531,15 @@ describe("Transaction routes", () => {
 
 
     it("applies a staged batch only once when two apply requests arrive concurrently", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+        ]);
 
         const stageResponse = await injectAuthenticated({
             method: "POST",
@@ -1509,10 +1616,15 @@ describe("Transaction routes", () => {
 
         const otherUserId = Number(result.lastInsertRowid);
 
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,10,2500`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 10,
+                price: 2500,
+                sourceRowNumber: 14,
+            },
+        ]);
 
         // Stage a batch as the portfolio owner (User A)
         const stageResponse = await injectAuthenticated({
@@ -1566,11 +1678,22 @@ describe("Transaction routes", () => {
     });
 
     it("returns 409 and preserves a staged batch when application fails due to insufficient holdings", async () => {
-        const csv = [
-            "transactionDate,securityId,type,quantity,price",
-            `2026-10-01,${securityId},BUY,5,110`,
-            `2026-10-02,${securityId},SELL,6,120`,
-        ].join("\n");
+        const csv = createZerodhaCsv([
+            {
+                date: "2026-10-01",
+                type: "BUY",
+                quantity: 5,
+                price: 110,
+                sourceRowNumber: 14,
+            },
+            {
+                date: "2026-10-02",
+                type: "SELL",
+                quantity: 6,
+                price: 120,
+                sourceRowNumber: 22,
+            },
+        ]);
 
         // Arrange: stage a batch whose second transaction cannot be applied.
         const stageResponse = await injectAuthenticated({
