@@ -604,12 +604,35 @@ describe("Transaction CSV import", () => {
 
         expect(staged.batch.status).toBe("STAGED");
 
+        const itemsBefore = db.prepare(`
+            SELECT source_row, source_file, source_row_number, isin, trade_id, order_id,
+                   security_id, type, quantity, price, transaction_date
+            FROM transaction_import_batch_items
+            WHERE batch_id = ?
+            ORDER BY source_row
+        `).all(staged.batch.id);
+
+        expect(itemsBefore).toEqual([
+            {
+                source_row: 2, source_file: "zerodha-test.csv", source_row_number: 14,
+                isin: "INE000A01011", trade_id: "trade-001", order_id: "order-001",
+                security_id: securityId, type: "BUY", quantity: 10, price: 2500,
+                transaction_date: "2026-10-01",
+            },
+            {
+                source_row: 3, source_file: "zerodha-test.csv", source_row_number: 22,
+                isin: "INE000A01011", trade_id: "trade-002", order_id: "order-002",
+                security_id: securityId, type: "BUY", quantity: 5, price: 2550,
+                transaction_date: "2026-10-03",
+            },
+        ]);
+
         // Apply the staged batch.
         const appliedTransactions = importService.applyStagedBatch(
             userId,
             portfolioId,
             staged.batch.id
-        );
+        ) as Array<{ id: number }>;
 
         expect(appliedTransactions).toHaveLength(2);
 
@@ -637,6 +660,45 @@ describe("Transaction CSV import", () => {
                 transaction_date: "2026-10-03",
             },
         ]);
+
+        // Each staged row must retain its provenance and link to its transaction.
+        const itemsAfter = db.prepare(`
+            SELECT *
+            FROM transaction_import_batch_items
+            WHERE batch_id = ?
+            ORDER BY source_row
+        `).all(staged.batch.id) as Array<{
+            source_row: number;
+            source_file: string;
+            source_row_number: number;
+            isin: string;
+            trade_id: string;
+            order_id: string;
+            security_id: number;
+            type: string;
+            quantity: number;
+            price: number;
+            transaction_date: string;
+            transaction_id: number | null;
+        }>;
+
+        expect(itemsAfter.map(({ source_row, source_file, source_row_number, isin,
+            trade_id, order_id, security_id, type, quantity, price, transaction_date }) => ({
+                source_row, source_file, source_row_number, isin, trade_id, order_id,
+                security_id, type, quantity, price, transaction_date,
+            }))).toEqual(itemsBefore);
+
+        expect(itemsAfter).toHaveLength(appliedTransactions.length);
+
+        expect(
+            itemsAfter.map(item => item.transaction_id)
+        ).toEqual(
+            appliedTransactions.map(transaction => transaction.id)
+        );
+
+        expect(
+            new Set(itemsAfter.map(item => item.transaction_id)).size
+        ).toBe(itemsAfter.length);
 
         // Holdings should reflect both transactions.
         const holding = db.prepare(`
@@ -670,6 +732,103 @@ describe("Transaction CSV import", () => {
 
         expect(batch?.status).toBe("APPLIED");
         expect(batch?.applied_at).not.toBeNull();
+    });
+
+
+    it("rolls back transactions, holdings, and provenance links when association fails", () => {
+        const csv = twoValidZerodhaTransactionsCsv();
+        const staged = importService.stageCsv(userId, portfolioId, csv);
+
+        const itemRepository = (importService as any)
+            .transactionImportBatchItemRepository;
+
+        const associateWithTransaction =
+            itemRepository.associateWithTransaction.bind(itemRepository);
+
+        let associationCount = 0;
+
+        const associateSpy = vi
+            .spyOn(itemRepository, "associateWithTransaction")
+            .mockImplementation((itemId, transactionId) => {
+                associationCount += 1;
+
+                if (associationCount === 2) {
+                    throw new Error(
+                        "Simulated transaction association failure"
+                    );
+                }
+
+                // Execute the real repository operation for the first item.
+                return associateWithTransaction(itemId, transactionId);
+            });
+
+        try {
+            expect(() =>
+                importService.applyStagedBatch(
+                    userId,
+                    portfolioId,
+                    staged.batch.id
+                )
+            ).toThrow("Simulated transaction association failure");
+
+            expect(associateSpy).toHaveBeenCalledTimes(2);
+
+            // Transaction inserts must be rolled back.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transactions
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // Holding changes must be rolled back.
+            expect(
+                db.prepare(`
+                SELECT id, quantity
+                FROM holdings
+                WHERE portfolio_id = ?
+            `).all(portfolioId)
+            ).toEqual([]);
+
+            // Even the first successfully written association must be rolled back.
+            expect(
+                db.prepare(`
+                SELECT transaction_id
+                FROM transaction_import_batch_items
+                WHERE batch_id = ?
+                ORDER BY source_row
+            `).all(staged.batch.id)
+            ).toEqual([
+                { transaction_id: null },
+                { transaction_id: null },
+            ]);
+
+            // Import history must remain empty.
+            expect(
+                db.prepare(`
+                SELECT id
+                FROM transaction_imports
+                WHERE user_id = ? AND portfolio_id = ?
+            `).all(userId, portfolioId)
+            ).toEqual([]);
+
+            // The batch must remain available for retry.
+            const batch = db.prepare(`
+            SELECT status, applied_at
+            FROM transaction_import_batches
+            WHERE id = ?
+        `).get(staged.batch.id) as {
+                status: string;
+                applied_at: string | null;
+            };
+
+            expect(batch?.status).toBe("STAGED");
+            expect(batch?.applied_at).toBeNull();
+
+        } finally {
+            associateSpy.mockRestore();
+        }
     });
 
 
