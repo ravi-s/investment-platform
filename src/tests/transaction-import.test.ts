@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runMigrations } from "../db/migration-runner.ts";
 import { TransactionImportService } from "../services/transaction-import-service.ts";
+import { TransactionService } from "../services/transaction.ts";
 
 import { ZerodhaTransactionAdapter } from "../services/zerodha-transactional-adapter.ts";
 import { SecurityRepository } from "../repositories/security.ts";
@@ -734,6 +735,34 @@ describe("Transaction CSV import", () => {
         expect(batch?.applied_at).not.toBeNull();
     });
 
+
+    it("rolls back when a created transaction has no valid ID", () => {
+        const staged = importService.stageCsv(
+            userId,
+            portfolioId,
+            twoValidZerodhaTransactionsCsv()
+        );
+        const create = TransactionService.prototype.create;
+        const createSpy = vi.spyOn(TransactionService.prototype, "create")
+            .mockImplementation(function (this: TransactionService, ...args) {
+                create.apply(this, args);
+                return undefined;
+            });
+
+        try {
+            expect(() =>
+                importService.applyStagedBatch(userId, portfolioId, staged.batch.id)
+            ).toThrow("Created transaction has no valid ID");
+            expect(db.prepare("SELECT id FROM transactions WHERE portfolio_id = ?")
+                .all(portfolioId)).toEqual([]);
+            expect(db.prepare("SELECT id FROM holdings WHERE portfolio_id = ?")
+                .all(portfolioId)).toEqual([]);
+            expect(importService.findBatchItems(staged.batch.id)
+                .map(item => item.transaction_id)).toEqual([null, null]);
+        } finally {
+            createSpy.mockRestore();
+        }
+    });
 
     it("rolls back transactions, holdings, and provenance links when association fails", () => {
         const csv = twoValidZerodhaTransactionsCsv();
@@ -1661,7 +1690,8 @@ describe("Transaction CSV import", () => {
                 SUM(source_row_number IS NOT NULL) AS with_source_row,
                 SUM(isin IS NOT NULL) AS with_isin,
                 SUM(trade_id IS NOT NULL) AS with_trade_id,
-                SUM(order_id IS NOT NULL) AS with_order_id
+                SUM(order_id IS NOT NULL) AS with_order_id,
+                SUM(transaction_id IS NULL) AS without_transaction_id
             FROM transaction_import_batch_items
             WHERE batch_id = ?
         `).get(result.batch.id);
@@ -1673,6 +1703,9 @@ describe("Transaction CSV import", () => {
             with_source_file: 477,
             with_source_row: 477,
             with_isin: 477,
+            with_trade_id: 477,
+            with_order_id: 477,
+            without_transaction_id: 477,
         });
     });
 });

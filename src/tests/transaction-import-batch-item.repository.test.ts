@@ -56,6 +56,82 @@ describe("TransactionImportBatchItemRepository", () => {
         db.close();
     });
 
+    function createItem(sourceRow: number) {
+        return itemRepository.createMany(batchId, [{
+            source_row: sourceRow,
+            transaction_date: "2026-10-01",
+            security_id: securityId,
+            type: "BUY",
+            quantity: 10,
+            price: 2500,
+        }]).find(item => item.source_row === sourceRow)!;
+    }
+
+    function createTransaction(): number {
+        return Number(db.prepare(`
+            INSERT INTO transactions (
+                portfolio_id, security_id, type, quantity, price, transaction_date
+            )
+            VALUES (?, ?, 'BUY', 10, 2500, '2026-10-01')
+        `).run(portfolioId, securityId).lastInsertRowid);
+    }
+
+    it("associates only the specified unassociated item", () => {
+        const item = createItem(2);
+        const otherItem = createItem(3);
+        const transactionId = createTransaction();
+
+        itemRepository.associateWithTransaction(item.id, transactionId);
+
+        expect(itemRepository.findByBatchId(batchId)).toMatchObject([
+            { id: item.id, transaction_id: transactionId },
+            { id: otherItem.id, transaction_id: null },
+        ]);
+    });
+
+    it("rejects reassociation without changing the existing association", () => {
+        const item = createItem(2);
+        const transactionId = createTransaction();
+        const otherTransactionId = createTransaction();
+        itemRepository.associateWithTransaction(item.id, transactionId);
+
+        expect(() =>
+            itemRepository.associateWithTransaction(item.id, otherTransactionId)
+        ).toThrow(/not found or already associated/);
+        expect(() =>
+            itemRepository.associateWithTransaction(item.id, transactionId)
+        ).toThrow(/not found or already associated/);
+        expect(itemRepository.findByBatchId(batchId)).toMatchObject([
+            { transaction_id: transactionId },
+        ]);
+    });
+
+    it("throws when the item does not exist", () => {
+        const transactionId = createTransaction();
+
+        expect(() =>
+            itemRepository.associateWithTransaction(999999, transactionId)
+        ).toThrow(/not found or already associated/);
+    });
+
+    it("preserves database constraints on transaction associations", () => {
+        const item = createItem(2);
+        const otherItem = createItem(3);
+        const transactionId = createTransaction();
+        itemRepository.associateWithTransaction(item.id, transactionId);
+
+        expect(() =>
+            itemRepository.associateWithTransaction(otherItem.id, transactionId)
+        ).toThrow();
+        expect(() =>
+            itemRepository.associateWithTransaction(otherItem.id, 999999)
+        ).toThrow();
+        expect(itemRepository.findByBatchId(batchId)).toMatchObject([
+            { id: item.id, transaction_id: transactionId },
+            { id: otherItem.id, transaction_id: null },
+        ]);
+    });
+
     it("creates and retrieves staged transaction rows in source order", () => {
         const items = itemRepository.createMany(batchId, [
             {

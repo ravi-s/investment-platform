@@ -1,0 +1,8 @@
+ALTER TABLE transaction_import_batch_items
+ADD COLUMN transaction_id INTEGER
+REFERENCES transactions(id);
+
+CREATE UNIQUE INDEX
+idx_transaction_import_batch_items_transaction_id
+ON transaction_import_batch_items(transaction_id)
+WHERE transaction_id IS NOT NULL;

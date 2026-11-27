@@ -291,8 +291,8 @@ export class TransactionImportService {
 
     /**
      * Applies a previously staged transaction import batch atomically.
-     * All transactions, holdings, import history, and batch status
-     * changes are committed together or rolled back together.
+     * Transactions, item associations, holdings, import history, and batch
+     * status changes are committed together or rolled back together.
      */
     applyStagedBatch(
         userId: number,
@@ -327,16 +327,34 @@ export class TransactionImportService {
                 throw new Error("Import batch contains no transactions");
             }
 
-            const importedTransactions = items.map(item =>
-                this.transactionService.create(
+            const importedTransactions = items.map(item => {
+                const transaction = this.transactionService.create(
                     portfolioId,
                     item.security_id,
                     item.type,
                     item.quantity,
                     item.price,
                     item.transaction_date
-                )
-            );
+                );
+
+                if (
+                    typeof transaction !== "object" ||
+                    transaction === null ||
+                    !("id" in transaction) ||
+                    typeof transaction.id !== "number" ||
+                    !Number.isSafeInteger(transaction.id) ||
+                    transaction.id <= 0
+                ) {
+                    throw new Error("Created transaction has no valid ID");
+                }
+
+                this.transactionImportBatchItemRepository.associateWithTransaction(
+                    item.id,
+                    transaction.id
+                );
+
+                return transaction;
+            });
 
             this.importHistoryRepository.create(
                 userId,

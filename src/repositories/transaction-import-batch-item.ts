@@ -15,6 +15,7 @@ export type TransactionImportBatchItem = {
     isin: string | null;
     trade_id: string | null;
     order_id: string | null;
+    transaction_id: number | null;
 };
 
 export type NewTransactionImportBatchItem = {
@@ -56,12 +57,39 @@ export class TransactionImportBatchItemRepository {
                     source_row_number,
                     isin,
                     trade_id,
-                    order_id
+                    order_id,
+                    transaction_id
+                    
                 FROM transaction_import_batch_items
                 WHERE batch_id = ?
                 ORDER BY source_row
             `)
             .all(batchId) as TransactionImportBatchItem[];
+    }
+
+    /**
+     * Atomically associates an item with a transaction only if it is unassociated.
+     * @param itemId The ID of the batch item to update.
+     * @param transactionId The ID of the transaction to associate.
+     * @throws If the item does not exist or is already associated. Database
+     * constraint errors, such as an invalid or already-associated transaction,
+     * also propagate to the caller.
+     */
+    associateWithTransaction(itemId: number, transactionId: number): void {
+        const result = this.db
+            .prepare(`
+                UPDATE transaction_import_batch_items
+                SET transaction_id = ?
+                WHERE id = ?
+                  AND transaction_id IS NULL
+            `)
+            .run(transactionId, itemId);
+
+        if (result.changes !== 1) {
+            throw new Error(
+                `Failed to associate transaction import batch item ${itemId}: item not found or already associated`
+            );
+        }
     }
 
     /**
@@ -95,6 +123,7 @@ export class TransactionImportBatchItemRepository {
                 trade_id,
                 order_id
             )
+            
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
@@ -111,7 +140,7 @@ export class TransactionImportBatchItemRepository {
                     item.source_row_number ?? null,
                     item.isin ?? null,
                     item.trade_id ?? null,
-                    item.order_id ?? null
+                    item.order_id ?? null,
                 );
             }
 
