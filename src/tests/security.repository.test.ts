@@ -72,6 +72,26 @@ describe("SecurityRepository", () => {
         testDb.close();
     });
 
+
+
+    it("defaults a newly inserted security to EQUITY", () => {
+        const result = testDb
+            .prepare("SELECT asset_type FROM securities WHERE isin = ?")
+            .get("INE002A01018") as { asset_type: string };
+
+        expect(result.asset_type).toBe("EQUITY");
+    });
+
+    it("creates a security with the default EQUITY asset type", () => {
+        const created = repository.create("Wipro Limited", "INE075A01022");
+
+        const result = testDb
+            .prepare("SELECT asset_type FROM securities WHERE id = ?")
+            .get(created.id) as { asset_type: string };
+
+        expect(result.asset_type).toBe("EQUITY");
+    });
+
     it("finds a security by id", () => {
         const result = repository.findById(1);
 
